@@ -1,0 +1,582 @@
+/* ===================================================================
+   ARTCRAFT TECHNICAL DESIGN SYSTEM (Desktop PyQt6)
+   Cảm hứng từ phong cách công cụ kỹ thuật ArtCraft / Linear / Vercel:
+   - Tối giản, dứt khoát, phân cấp rõ ràng
+   - Nút chính đen tuyền sắc nét (#0F172A) chữ trắng bold
+   - Viền hairline 1px sắc nét (#E2E5E9), nền sáng dịu (#F4F5F7)
+   - Nhãn kỹ thuật & Bảng dữ liệu font Monospace đều đặn
+   =================================================================== */
+
+* {
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+    font-size: 13px;
+    color: #0F172A;
+}
+
+QMainWindow, QDialog {
+    background-color: #F4F5F7;
+}
+
+QWidget#CentralWidget {
+    background-color: #F4F5F7;
+}
+
+QStackedWidget {
+    background-color: #F4F5F7;
+}
+
+QScrollArea, QScrollArea > QWidget > QWidget {
+    background-color: #F4F5F7;
+    border: none;
+}
+
+/* ===================================================================
+   KHUNG CHỨA BẢNG / VÙNG NỘI DUNG (Panel)
+   =================================================================== */
+#Panel {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E5E9;
+    border-radius: 6px;
+}
+
+/* ===================================================================
+   TIÊU ĐỀ MÀN HÌNH (PageHeader)
+   =================================================================== */
+#PageTitle {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0F172A;
+    letter-spacing: -0.3px;
+}
+
+#PageSubtitle {
+    font-size: 12px;
+    color: #64748B;
+    font-weight: 500;
+}
+
+/* ===================================================================
+   CỘT ĐIỀU HƯỚNG BÊN TRÁI (SIDEBAR) - NỀN SÁNG TINH TẾ, VIỀN PHẢI MẢNH
+   =================================================================== */
+#Sidebar {
+    background-color: #FFFFFF;
+    border-right: 1px solid #E2E5E9;
+    min-width: 188px;
+    max-width: 188px;
+}
+
+#Sidebar QPushButton {
+    background-color: transparent;
+    color: #475569;
+    border: none;
+    border-radius: 4px;
+    text-align: left;
+    padding: 8px 12px;
+    margin: 2px 8px;
+    min-height: 36px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+#Sidebar QPushButton::icon {
+    margin-right: 8px;
+}
+
+#Sidebar QPushButton:hover {
+    background-color: #F1F5F9;
+    color: #0F172A;
+}
+
+#Sidebar QPushButton:checked {
+    background-color: #0F172A;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+#Sidebar QPushButton:checked:hover {
+    background-color: #1E293B;
+    color: #FFFFFF;
+}
+
+/* ===================================================================
+   TOOLTIP POPUP TOÀN ỨNG DỤNG (QToolTip) — SẮC NÉT, ĐỘ TƯƠNG PHẢN CAO
+   =================================================================== */
+QToolTip {
+    background-color: #0F172A;
+    color: #FFFFFF;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: "Geist Mono", "JetBrains Mono", monospace;
+}
+
+#ServerCard {
+    background-color: #F8FAFC;
+    border: 1px solid #E2E5E9;
+    border-radius: 4px;
+    margin: 4px 8px 6px 8px;
+    padding: 8px 10px;
+}
+
+#ServerCard QLabel {
+    font-size: 11px;
+    color: #64748B;
+    background: transparent;
+    border: none;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+}
+
+#SidebarServerCard {
+    background-color: #F8FAFC;
+    border: 1px solid #E2E5E9;
+    border-radius: 4px;
+    margin: 4px 8px 6px 8px;
+    padding: 8px 10px;
+}
+
+#SidebarServerCard QLabel {
+    font-size: 11px;
+    color: #64748B;
+    background: transparent;
+    border: none;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+}
+
+#SidebarSeparator {
+    background-color: #E2E5E9;
+    max-height: 1px;
+    min-height: 1px;
+    margin: 6px 8px;
+}
+
+/* ===================================================================
+   NÚT BẤM (QPushButton) — PHONG CÁCH ARTCRAFT
+   =================================================================== */
+QPushButton {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E5E9;
+    border-radius: 4px;
+    min-height: 32px;
+    padding: 4px 14px;
+    color: #0F172A;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+QPushButton:hover {
+    background-color: #F8FAFC;
+    border-color: #CBD5E1;
+}
+
+QPushButton:focus {
+    border: 2px solid #1F5FA8;
+}
+
+QPushButton:disabled {
+    color: #94A3B8;
+    background-color: #F8FAFC;
+    border-color: #E2E5E9;
+}
+
+/* Nút chính phong cách ArtCraft: Đen tuyền sắc nét (#0F172A), chữ trắng bold */
+QPushButton[role="primary"] {
+    background-color: #0F172A;
+    border: 1px solid #0F172A;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+QPushButton[role="primary"]:hover {
+    background-color: #1E293B;
+    border-color: #1E293B;
+}
+
+QPushButton[role="primary"]:disabled {
+    background-color: #94A3B8;
+    border-color: #94A3B8;
+    color: #F1F5F9;
+}
+
+/* Nút nguy hiểm — viền đỏ nhạt, nền đỏ rất nhạt, chữ đỏ */
+QPushButton[role="danger"] {
+    background-color: #FEF2F2;
+    color: #DC2626;
+    border: 1px solid #FECACA;
+}
+
+QPushButton[role="danger"]:hover {
+    background-color: #FEE2E2;
+    border-color: #FCA5A5;
+}
+
+QPushButton[role="danger"]:disabled {
+    color: #CBD5E1;
+    border-color: #E2E5E9;
+    background-color: transparent;
+}
+
+/* Nút nguy hiểm đỏ đặc — CHỈ trong hộp thoại xác nhận */
+QPushButton[role="danger-solid"] {
+    background-color: #DC2626;
+    border: 1px solid #DC2626;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+QPushButton[role="danger-solid"]:hover {
+    background-color: #B91C1C;
+    border-color: #B91C1C;
+}
+
+/* ===================================================================
+   Ô NHẬP LIỆU & DROPDOWN
+   =================================================================== */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #E2E5E9;
+    border-radius: 4px;
+    min-height: 32px;
+    padding: 4px 10px;
+    color: #0F172A;
+    selection-background-color: #E2E8F0;
+    selection-color: #0F172A;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTextEdit:focus {
+    border: 1px solid #0F172A;
+}
+
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QTextEdit:disabled {
+    background-color: #F8FAFC;
+    color: #94A3B8;
+    border-color: #E2E5E9;
+}
+
+QComboBox {
+    min-height: 34px;
+    padding: 4px 28px 4px 10px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 26px;
+    border-left: 1px solid #E2E5E9;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    background: transparent;
+}
+
+QComboBox::down-arrow {
+    image: url("__CHEVRON_DOWN_PATH__");
+    width: 10px;
+    height: 10px;
+}
+
+QComboBox::down-arrow:on {
+    top: 1px;
+}
+
+/* Ô nhập số cổng: Xóa bỏ nút cộng/trừ theo yêu cầu */
+QSpinBox#PortSpin {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+QSpinBox#PortSpin::up-button, QSpinBox#PortSpin::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 0px;
+    height: 0px;
+    border: none;
+    background: transparent;
+}
+
+/* ===================================================================
+   STEPPER TRỌNG SỐ TIÊU CHÍ — PHONG CÁCH KỸ THUẬT ARTCRAFT (GEIST MONO)
+   Bộ nút [-] [ Giá trị ] [+] thiết kế thanh lịch, phông số Geist Mono
+   =================================================================== */
+#CriteriaStepper {
+    background-color: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 4px;
+}
+
+#CriteriaStepper:hover {
+    border-color: #94A3B8;
+}
+
+#CriteriaStepper QPushButton#StepperMinus {
+    font-family: "Geist Mono", "JetBrains Mono", monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #334155;
+    background-color: #F8FAFC;
+    border: none;
+    border-right: 1px solid #E2E8F0;
+    border-top-left-radius: 3px;
+    border-bottom-left-radius: 3px;
+    padding: 0px 0px 1px 0px;
+    margin: 0px;
+}
+
+#CriteriaStepper QPushButton#StepperMinus:hover {
+    background-color: #E2E8F0;
+    color: #0F172A;
+}
+
+#CriteriaStepper QPushButton#StepperMinus:pressed {
+    background-color: #CBD5E1;
+}
+
+#CriteriaStepper QDoubleSpinBox#StepperSpin {
+    font-family: "Geist Mono", "JetBrains Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0F172A;
+    background-color: #FFFFFF;
+    border: none;
+    border-radius: 0px;
+    padding: 0px;
+    margin: 0px;
+}
+
+#CriteriaStepper QDoubleSpinBox#StepperSpin:focus {
+    background-color: #FFFFFF;
+}
+
+#CriteriaStepper QDoubleSpinBox#StepperSpin::up-button,
+#CriteriaStepper QDoubleSpinBox#StepperSpin::down-button {
+    width: 0px;
+    height: 0px;
+    border: none;
+    background: transparent;
+}
+
+#CriteriaStepper QPushButton#StepperPlus {
+    font-family: "Geist Mono", "JetBrains Mono", monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #334155;
+    background-color: #F8FAFC;
+    border: none;
+    border-left: 1px solid #E2E8F0;
+    border-top-right-radius: 3px;
+    border-bottom-right-radius: 3px;
+    padding: 0px 0px 1px 0px;
+    margin: 0px;
+}
+
+#CriteriaStepper QPushButton#StepperPlus:hover {
+    background-color: #E2E8F0;
+    color: #0F172A;
+}
+
+#CriteriaStepper QPushButton#StepperPlus:pressed {
+    background-color: #CBD5E1;
+}
+
+/* ===================================================================
+   BẢNG DỮ LIỆU (QTableView) — PHONG CÁCH ARTCRAFT
+   Tiêu đề font Monospace viết hoa tinh gọn, không vạch dọc, đường kẻ ngang mảnh
+   =================================================================== */
+QTableView {
+    background: transparent;
+    border: none;
+    outline: none;
+}
+
+QTableView::item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #F1F5F9;
+    color: #0F172A;
+}
+
+QTableView::item:hover {
+    background-color: #F8FAFC;
+}
+
+QTableView::item:selected {
+    background-color: #F1F5F9;
+    color: #0F172A;
+}
+
+QHeaderView {
+    background: transparent;
+}
+
+QHeaderView::section {
+    background-color: #F8F9FA;
+    color: #64748B;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    border: none;
+    border-bottom: 1px solid #E2E5E9;
+    padding: 8px 12px;
+    min-height: 36px;
+    letter-spacing: 0.5px;
+}
+
+QHeaderView::section:first {
+    border-top-left-radius: 6px;
+}
+
+QHeaderView::section:last {
+    border-top-right-radius: 6px;
+}
+
+/* ===================================================================
+   TAB (QTabBar & QTabWidget)
+   =================================================================== */
+QTabWidget::pane {
+    border: 1px solid #E2E5E9;
+    border-radius: 6px;
+    background-color: #FFFFFF;
+    top: -1px;
+}
+
+QTabBar::tab {
+    padding: 8px 16px;
+    color: #64748B;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+QTabBar::tab:hover:!selected {
+    color: #0F172A;
+}
+
+QTabBar::tab:selected {
+    color: #0F172A;
+    border-bottom: 2px solid #0F172A;
+}
+
+/* ===================================================================
+   THANH CHIA VÙNG (QSplitter) — TAY NẮM TRONG SUỐT 8px
+   =================================================================== */
+QSplitter::handle {
+    background: transparent;
+}
+
+QSplitter::handle:horizontal {
+    width: 8px;
+}
+
+QSplitter::handle:vertical {
+    height: 8px;
+}
+
+QSplitter::handle:hover {
+    background-color: #E2E5E9;
+}
+
+/* ===================================================================
+   THANH TIẾN ĐỘ (QProgressBar) — THANH MẢNH 6px
+   =================================================================== */
+QProgressBar {
+    border: none;
+    border-radius: 3px;
+    background-color: #E2E5E9;
+    height: 6px;
+    max-height: 6px;
+    min-height: 6px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #0F172A;
+    border-radius: 3px;
+}
+
+/* ===================================================================
+   THANH TRẠNG THÁI (QStatusBar) — FOOTER KỸ THUẬT MONOSPACE
+   =================================================================== */
+QStatusBar {
+    background-color: #FFFFFF;
+    border-top: 1px solid #E2E5E9;
+    color: #64748B;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    min-height: 28px;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+QStatusBar QLabel {
+    color: #64748B;
+    font-family: "Geist Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+    font-size: 11px;
+    padding: 0 12px;
+}
+
+/* ===================================================================
+   THANH CUỘN (QScrollBar) — PHẲNG, TỐI GIẢN
+   =================================================================== */
+QScrollBar:vertical {
+    background-color: transparent;
+    width: 8px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #CBD5E1;
+    min-height: 24px;
+    border-radius: 4px;
+    margin: 1px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #94A3B8;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    background-color: transparent;
+    height: 8px;
+    margin: 0px;
+    border: none;
+}
+
+QScrollBar::handle:horizontal {
+    background-color: #CBD5E1;
+    min-width: 24px;
+    border-radius: 4px;
+    margin: 1px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background-color: #94A3B8;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* ===================================================================
+   HỘP THOẠI (QDialog)
+   =================================================================== */
+QDialog {
+    border-radius: 8px;
+}
+
+/* ===================================================================
+   SCROLL AREA — PHẲNG, KHÔNG VIỀN
+   =================================================================== */
+QScrollArea {
+    border: none;
+    background: transparent;
+}

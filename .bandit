@@ -1,0 +1,5 @@
+# Bandit configuration file
+exclude_dirs:
+  - "backend/samples"
+  - "samples"
+  - "*/samples/*"

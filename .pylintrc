@@ -1,0 +1,17 @@
+[MAIN]
+ignore = backend/samples,samples
+ignore-paths = ^backend[\\/]samples[\\/].*,^samples[\\/].*
+
+[FORMAT]
+max-line-length = 120
+
+[DESIGN]
+max-args = 8
+max-positional-arguments = 8
+
+[SIMILARITIES]
+min-similarity-lines = 25
+ignore-comments = yes
+ignore-docstrings = yes
+ignore-imports = yes
+ignore-signatures = yes

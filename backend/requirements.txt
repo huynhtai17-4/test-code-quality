@@ -1,0 +1,8 @@
+mysql-connector-python
+numpy
+pandas
+radon
+pylint
+bandit
+pip-audit
+python-dotenv
