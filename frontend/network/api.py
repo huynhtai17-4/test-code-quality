@@ -2,12 +2,20 @@
 
 from typing import Any
 
+from frontend.config import ANALYSIS_TIMEOUT
 from frontend.network.socket_client import SocketClient
 
 
-def _call_api(action: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+def _call_api(
+    action: str,
+    data: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
     """Hàm phụ trợ: Mở kết nối -> Gửi yêu cầu -> Nhận phản hồi -> Đóng kết nối."""
-    with SocketClient() as client:
+    kwargs: dict[str, Any] = {}
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    with SocketClient(**kwargs) as client:
         return client.send_request(action=action, data=data)
 
 
@@ -55,11 +63,12 @@ def get_project(project_id: int) -> dict[str, Any]:
     return _call_api("project.get", {"project_id": project_id})
 
 
-def create_project(
+def create_project(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     name: str,
     path: str,
     desc: str = "",
     source_type: str = "local",
+    timeout: float = 60.0,
 ) -> dict[str, Any]:
     """
     Đăng ký một dự án mới vào hệ thống.
@@ -69,6 +78,7 @@ def create_project(
         path: Đường dẫn thư mục mã nguồn.
         desc: Mô tả ngắn gọn về dự án.
         source_type: Loại nguồn ('local', 'git', ...).
+        timeout: Thời gian chờ tối đa cho tạo/clone dự án.
     """
     payload = {
         "name": name,
@@ -76,7 +86,7 @@ def create_project(
         "description": desc,
         "source_type": source_type,
     }
-    return _call_api("project.create", payload)
+    return _call_api("project.create", payload, timeout=timeout)
 
 
 def update_project(
@@ -107,14 +117,18 @@ def delete_project(project_id: int) -> dict[str, Any]:
 # =====================================================================
 # 3. TIẾN TRÌNH PHÂN TÍCH (ANALYSIS)
 # =====================================================================
-def run_analysis(project_id: int) -> dict[str, Any]:
+def run_analysis(
+    project_id: int,
+    timeout: float = ANALYSIS_TIMEOUT,
+) -> dict[str, Any]:
     """
     Khởi động phiên kiểm định mã nguồn toàn diện cho dự án.
 
     Args:
         project_id: ID của dự án cần phân tích.
+        timeout: Thời gian chờ tối đa cho phân tích (mặc định ANALYSIS_TIMEOUT).
     """
-    return _call_api("analysis.run", {"project_id": project_id})
+    return _call_api("analysis.run", {"project_id": project_id}, timeout=timeout)
 
 
 # =====================================================================

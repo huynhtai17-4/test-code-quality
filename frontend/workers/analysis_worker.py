@@ -50,6 +50,8 @@ class AnalysisWorker(QThread):
         try:
             future = executor.submit(api.run_analysis, self.project_id)
             current_stage_idx = 0
+            ticks_in_stage = 0
+            ticks_per_stage = 12  # ~3.6s mỗi giai đoạn giúp thanh tiến trình tiến triển tự nhiên
 
             while not future.done():
                 if self.is_cancelled:
@@ -61,7 +63,10 @@ class AnalysisWorker(QThread):
                 if current_stage_idx < len(_STAGES):
                     pct, msg = _STAGES[current_stage_idx]
                     self.progress.emit(msg, pct)
-                    current_stage_idx += 1
+                    ticks_in_stage += 1
+                    if ticks_in_stage >= ticks_per_stage:
+                        current_stage_idx += 1
+                        ticks_in_stage = 0
 
                 # Chờ nhẹ 0.3s trước khi kiểm tra lại
                 try:
