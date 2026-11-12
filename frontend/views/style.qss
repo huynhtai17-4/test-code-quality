@@ -386,12 +386,12 @@ QTableView {
     background: transparent;
     border: none;
     outline: none;
+    color: #0F172A;
 }
 
 QTableView::item {
     padding: 8px 12px;
     border-bottom: 1px solid #F1F5F9;
-    color: #0F172A;
 }
 
 QTableView::item:hover {
@@ -400,7 +400,6 @@ QTableView::item:hover {
 
 QTableView::item:selected {
     background-color: #F1F5F9;
-    color: #0F172A;
 }
 
 QHeaderView {

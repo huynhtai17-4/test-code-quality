@@ -59,6 +59,7 @@ from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
+from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.table_utils import chuan_hoa_bang
 from frontend.workers.request_worker import RequestWorker
@@ -646,6 +647,9 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         container_layout.setSpacing(0)
 
         self.table_view.setModel(self._proxy_model)
+        self.table_view.setItemDelegateForColumn(1, PillBadgeDelegate("severity", self.table_view))
+        self.table_view.setItemDelegateForColumn(2, PillBadgeDelegate("status", self.table_view))
+        self.table_view.setItemDelegateForColumn(3, PillBadgeDelegate("tool", self.table_view))
         chuan_hoa_bang(self.table_view, cot_gian=4, cot_so=())
         self.table_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table_view.setSortingEnabled(True)

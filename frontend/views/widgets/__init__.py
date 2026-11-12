@@ -5,6 +5,7 @@ from frontend.views.widgets.grade_label import GradeLabel
 from frontend.views.widgets.inline_notice import InlineNotice
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
+from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.score_bar import ScoreBar
 from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.status_dot import StatusDot
@@ -19,5 +20,6 @@ __all__ = [
     "InlineNotice",
     "PageHeader",
     "Panel",
+    "PillBadgeDelegate",
     "chuan_hoa_bang",
 ]

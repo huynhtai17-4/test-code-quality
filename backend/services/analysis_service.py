@@ -167,6 +167,11 @@ def _perform_scan_and_aggregation(
     )
     score_res = scoring.calculate_final_score(criteria_scores, weights)
 
+    total_files = len(aggregated.get("file_summary", [])) or int(radon_data.get("total_files", 0))
+    total_loc = int(radon_data.get("total_loc", 0))
+    aggregated["total_files"] = total_files
+    aggregated["total_loc"] = total_loc
+
     return aggregated, score_res, pylint_data
 
 
@@ -189,6 +194,8 @@ def _persist_results(
         "severity_distribution": severity_dist,
         "top_risk_files": aggregated.get("top_risk_files", []),
         "weights_used": score_res.get("weights_used", {}),
+        "total_files": aggregated.get("total_files", len(aggregated.get("file_summary", []))),
+        "total_loc": aggregated.get("total_loc", 0),
     }
     summary_json = json.dumps(summary_payload, ensure_ascii=False)
 
@@ -281,7 +288,10 @@ def run_project_analysis(
                 "criteria_scores": score_res["criteria_scores"],
                 "severity_distribution": aggregated.get("severity_distribution", {}),
                 "top_risk_files": aggregated.get("top_risk_files", []),
+                "file_summary": aggregated.get("file_summary", []),
                 "total_issues": int(aggregated.get("total_issues_count", 0)),
+                "total_files": aggregated.get("total_files", len(aggregated.get("file_summary", []))),
+                "total_loc": int(aggregated.get("total_loc", 0)),
             }
 
         finally:

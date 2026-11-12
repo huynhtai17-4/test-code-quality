@@ -52,14 +52,13 @@ def apply_chart_style() -> None:
         "grid.linewidth": 0.8,
         "xtick.color": CHART_TEXT_MUTED,
         "ytick.color": CHART_TEXT_MUTED,
-        "font.family": "sans-serif",
-        "font.sans-serif": ["Segoe UI", "SF Pro Text", "Noto Sans", "DejaVu Sans"],
+        "font.family": "monospace",
+        "font.monospace": ["Geist Mono", "JetBrains Mono", "Cascadia Mono", "Consolas", "monospace"],
         "font.size": 10,
         "axes.titlesize": 11,
         "axes.titleweight": "semibold",
         "axes.titlelocation": "left",
         "legend.frameon": False,
-        "figure.constrained_layout.use": True,
     }
     mpl.rcParams.update(config)
 

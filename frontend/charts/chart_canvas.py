@@ -141,6 +141,10 @@ class AnalysisChartCanvas(QWidget):
         ax.fill(angles, values, color=CHART_ACCENT, alpha=0.15)
         ax.set_title("Đa giác 5 tiêu chí kiểm định", pad=14)
 
+        try:
+            self.fig.tight_layout()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.debug("Bỏ qua lỗi căn chỉnh layout biểu đồ radar: %s", exc)
         self.canvas.draw()
 
     def draw_top_risk_bar(self, top_files: list[dict[str, Any]]) -> None:
@@ -168,8 +172,15 @@ class AnalysisChartCanvas(QWidget):
         ax.invert_yaxis()
         ax.set_xlabel("Số lượng lỗi", fontsize=9, color=CHART_TEXT_MUTED)
         ax.set_title("Top 5 tệp tin rủi ro cao nhất", pad=10)
-        ax.bar_label(bars, padding=4, fontsize=9, color=CHART_TEXT_MUTED)
 
+        max_val = max(counts) if counts else 10
+        ax.set_xlim(0, max(max_val * 1.25, 10))
+        ax.bar_label(bars, padding=6, fontsize=9, color=CHART_TEXT_MUTED)
+
+        try:
+            self.fig.tight_layout()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.debug("Bỏ qua lỗi căn chỉnh layout biểu đồ radar: %s", exc)
         self.canvas.draw()
 
     def save_chart(self, file_path: str) -> bool:

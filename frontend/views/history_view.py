@@ -62,6 +62,7 @@ from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
+from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.table_utils import chuan_hoa_bang
 from frontend.workers.request_worker import RequestWorker
 
@@ -637,6 +638,7 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         # Cài đặt bảng QTableView
         self.table_view.setModel(self._table_model)
+        self.table_view.setItemDelegateForColumn(3, PillBadgeDelegate("grade", self.table_view))
         chuan_hoa_bang(self.table_view, cot_gian=1, cot_so=(2, 4, 5, 6))
         self.table_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table_view.doubleClicked.connect(self._on_row_double_clicked)
@@ -771,6 +773,10 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
                 self.chart_frame.hide()
             self.content_stack.setCurrentIndex(1)
             self.trend_canvas.draw_empty("Chưa có phiên phân tích nào")
+        elif len(sessions) < 2:
+            if self.chart_frame is not None:
+                self.chart_frame.hide()
+            self.content_stack.setCurrentIndex(0)
         else:
             if self.chart_frame is not None:
                 self.chart_frame.show()

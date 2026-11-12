@@ -1,5 +1,7 @@
 """Màn hình Phân tích chi tiết chất lượng mã nguồn (AnalysisView) theo SKILLS.md."""
 
+import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -7,6 +9,8 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+logger = logging.getLogger(__name__)
 
 # pylint: disable=wrong-import-position,no-name-in-module
 from PyQt6.QtCore import (
@@ -17,6 +21,7 @@ from PyQt6.QtCore import (
     Qt,
     pyqtSignal,
 )
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -70,15 +75,24 @@ def _extract_metric_str(val: Any) -> str:
     return f"{val:.1f}" if isinstance(val, (int, float)) else "—"
 
 
+def _format_count_or_dash(val: Any) -> str:
+    """Hiển thị số lượng hoặc gạch ngang nếu là 0."""
+    try:
+        n = int(val)
+        return str(n) if n > 0 else "—"
+    except (ValueError, TypeError):
+        return "—"
+
+
 def _get_display_value(file_info: dict[str, Any], col: int) -> str:
     """Trích xuất chuỗi hiển thị theo từng cột dữ liệu."""
     extractors = (
         lambda x: str(x.get("file", "—")),
         lambda x: str(x.get("total_issues", 0)),
-        lambda x: str(x.get("critical_count", 0)),
-        lambda x: str(x.get("high_count", 0)),
-        lambda x: str(x.get("medium_count", 0)),
-        lambda x: str(x.get("low_count", 0)),
+        lambda x: _format_count_or_dash(x.get("critical_count")),
+        lambda x: _format_count_or_dash(x.get("high_count")),
+        lambda x: _format_count_or_dash(x.get("medium_count")),
+        lambda x: _format_count_or_dash(x.get("low_count")),
         lambda x: _extract_metric_str(x.get("cc")),
         lambda x: _extract_metric_str(x.get("mi")),
     )
@@ -104,7 +118,11 @@ class FileSummaryTableModel(QAbstractTableModel):
         """Trả về số lượng cột của bảng."""
         return len(_FILE_HEADERS)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(  # pylint: disable=too-many-return-statements
+        self,
+        index: QModelIndex,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
         """Trả về dữ liệu hiển thị, phông chữ và căn lề cho từng ô."""
         if not index.isValid() or index.row() >= len(self._files):
             return None
@@ -115,7 +133,10 @@ class FileSummaryTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return _get_display_value(file_info, col)
 
-        if role == Qt.ItemDataRole.FontRole and col == 0:
+        if role == Qt.ItemDataRole.ForegroundRole:
+            return self._get_cell_color(file_info, col)
+
+        if role == Qt.ItemDataRole.FontRole:
             return lay_font_code(11)
 
         if role == Qt.ItemDataRole.TextAlignmentRole:
@@ -125,6 +146,47 @@ class FileSummaryTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.UserRole:
             return file_info
 
+        return None
+
+    @staticmethod
+    def _get_cell_color(  # pylint: disable=too-many-return-statements,too-many-branches
+        file_info: dict[str, Any],
+        col: int,
+    ) -> QColor | None:
+        """Tính toán màu sắc chữ cho từng ô dữ liệu kỹ thuật."""
+        if col == 1:
+            cnt = int(file_info.get("total_issues", 0))
+            return QColor("#0F172A") if cnt > 0 else QColor("#94A3B8")
+        if col == 2:
+            crit = int(file_info.get("critical_count", 0))
+            return QColor("#DC2626") if crit > 0 else QColor("#94A3B8")
+        if col == 3:
+            high = int(file_info.get("high_count", 0))
+            return QColor("#EA580C") if high > 0 else QColor("#94A3B8")
+        if col == 4:
+            med = int(file_info.get("medium_count", 0))
+            return QColor("#D97706") if med > 0 else QColor("#94A3B8")
+        if col == 5:
+            low = int(file_info.get("low_count", 0))
+            return QColor("#2563EB") if low > 0 else QColor("#94A3B8")
+        if col == 6:
+            cc_val = file_info.get("cc")
+            if isinstance(cc_val, (int, float)):
+                if cc_val >= 15:
+                    return QColor("#DC2626")
+                if cc_val >= 10:
+                    return QColor("#D97706")
+                return QColor("#0F172A")
+            return QColor("#94A3B8")
+        if col == 7:
+            mi_val = file_info.get("mi")
+            if isinstance(mi_val, (int, float)):
+                if mi_val < 50:
+                    return QColor("#DC2626")
+                if mi_val < 65:
+                    return QColor("#D97706")
+                return QColor("#059669")
+            return QColor("#94A3B8")
         return None
 
     def headerData(  # pylint: disable=invalid-name
@@ -263,11 +325,11 @@ class AnalysisView(QWidget):
         card = QFrame(self)
         card.setStyleSheet(
             f"QFrame {{ background-color: {SURFACE};"
-            f" border: 1px solid {BORDER_SOFT}; border-radius: 4px; }}"
+            f" border: 1px solid {BORDER_SOFT}; border-radius: 6px; }}"
         )
         h_layout = QHBoxLayout(card)
-        h_layout.setContentsMargins(20, 16, 20, 16)
-        h_layout.setSpacing(24)
+        h_layout.setContentsMargins(24, 18, 24, 18)
+        h_layout.setSpacing(28)
 
         left_col = QWidget(card)
         left_col.setFixedWidth(240)
@@ -278,8 +340,8 @@ class AnalysisView(QWidget):
         h_layout.addWidget(left_col)
 
         v_line = QFrame(card)
-        v_line.setFrameShape(QFrame.Shape.VLine)
-        v_line.setStyleSheet(f"color: {BORDER_SOFT};")
+        v_line.setFixedWidth(1)
+        v_line.setStyleSheet(f"background-color: {BORDER_SOFT}; border: none;")
         h_layout.addWidget(v_line)
 
         right_col = QWidget(card)
@@ -443,7 +505,9 @@ class AnalysisView(QWidget):
 
         jump_bar = QHBoxLayout()
         jump_bar.addStretch()
-        btn_jump = QPushButton("Xem toàn bộ danh sách lỗi trong bảng Issues", container)
+        btn_jump = QPushButton("Xem toàn bộ danh sách lỗi trong bảng Issues →", container)
+        btn_jump.setProperty("role", "primary")
+        btn_jump.setFixedHeight(34)
         btn_jump.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_jump.clicked.connect(self._on_jump_to_issues)
         jump_bar.addWidget(btn_jump)
@@ -488,17 +552,26 @@ class AnalysisView(QWidget):
         charts_row = QHBoxLayout()
         charts_row.setSpacing(16)
 
-        self._canvas_radar = AnalysisChartCanvas(container, width=4.8, height=3.6)
-        self._canvas_top_risk = AnalysisChartCanvas(container, width=5.2, height=3.6)
+        radar_panel = Panel(container)
+        rp_layout = QVBoxLayout(radar_panel)
+        rp_layout.setContentsMargins(12, 12, 12, 12)
+        self._canvas_radar = AnalysisChartCanvas(radar_panel, width=4.8, height=3.6)
+        rp_layout.addWidget(self._canvas_radar)
 
-        charts_row.addWidget(self._canvas_radar)
-        charts_row.addWidget(self._canvas_top_risk)
+        risk_panel = Panel(container)
+        rk_layout = QVBoxLayout(risk_panel)
+        rk_layout.setContentsMargins(12, 12, 12, 12)
+        self._canvas_top_risk = AnalysisChartCanvas(risk_panel, width=5.2, height=3.6)
+        rk_layout.addWidget(self._canvas_top_risk)
+
+        charts_row.addWidget(radar_panel, 1)
+        charts_row.addWidget(risk_panel, 1)
         v_layout.addLayout(charts_row)
 
         btn_bar = QHBoxLayout()
         btn_bar.addStretch()
 
-        btn_save = QPushButton("Lưu ảnh biểu đồ (PNG)...", container)
+        btn_save = QPushButton("Lưu ảnh biểu đồ (PNG)", container)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.clicked.connect(self._save_charts_image)
         btn_bar.addWidget(btn_save)
@@ -540,7 +613,11 @@ class AnalysisView(QWidget):
         if self._lbl_low_cnt:
             self._lbl_low_cnt.setText(str(sev_dist.get("Low", 0)))
 
-    def _update_overview_counts(self, data: dict[str, Any], total_issues: int) -> None:
+    def _update_overview_counts(  # pylint: disable=too-many-branches
+        self,
+        data: dict[str, Any],
+        total_issues: int,
+    ) -> None:
         """Cập nhật các chỉ số tổng quan."""
         if self._lbl_meta:
             self._lbl_meta.setText(f"Lần phân tích cuối: Vừa xong · {total_issues} lỗi phát hiện")
@@ -548,12 +625,39 @@ class AnalysisView(QWidget):
             self._lbl_issues.setText(str(total_issues))
 
         loc_val = data.get("total_loc")
-        if self._lbl_loc and loc_val is not None:
-            self._lbl_loc.setText(f"{loc_val:,}")
-
         files_val = data.get("total_files")
-        if self._lbl_files and files_val is not None:
-            self._lbl_files.setText(str(files_val))
+
+        # Trích xuất fallback từ summary nếu có
+        summary = data.get("summary")
+        if (loc_val is None or files_val is None) and summary:
+            if isinstance(summary, str):
+                try:
+                    s_dict = json.loads(summary)
+                    if loc_val is None:
+                        loc_val = s_dict.get("total_loc")
+                    if files_val is None:
+                        files_val = s_dict.get("total_files")
+                except (json.JSONDecodeError, TypeError, KeyError) as err:
+                    logger.debug("Bỏ qua lỗi trích xuất summary: %s", err)
+            elif isinstance(summary, dict):
+                if loc_val is None:
+                    loc_val = summary.get("total_loc")
+                if files_val is None:
+                    files_val = summary.get("total_files")
+
+        if files_val is None:
+            flist = data.get("file_summary") or data.get("top_risk_files")
+            if isinstance(flist, list) and flist:
+                files_val = len(flist)
+
+        if self._lbl_loc:
+            if isinstance(loc_val, (int, float)) and loc_val > 0:
+                self._lbl_loc.setText(f"{int(loc_val):,}")
+            else:
+                self._lbl_loc.setText("—")
+
+        if self._lbl_files:
+            self._lbl_files.setText(str(files_val) if files_val is not None else "—")
 
     def load_session_data(self, data: dict[str, Any]) -> None:
         """Cập nhật toàn bộ giao diện từ kết quả phân tích."""
@@ -586,9 +690,10 @@ class AnalysisView(QWidget):
         total_issues = data.get("total_issues", sum(sev_dist.values()))
         self._update_overview_counts(data, total_issues)
 
-        top_files = data.get("top_risk_files", [])
-        self._file_table_model.set_files(top_files)
+        all_files = data.get("file_summary") or data.get("top_risk_files", [])
+        self._file_table_model.set_files(all_files)
 
+        top_files = data.get("top_risk_files") or all_files[:5]
         if self._canvas_radar:
             self._canvas_radar.draw_criteria_radar(crit_scores)
         if self._canvas_top_risk:

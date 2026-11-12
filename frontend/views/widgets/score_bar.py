@@ -109,7 +109,33 @@ class ScoreBar(QWidget):  # pylint: disable=too-few-public-methods
             self.weight = max(0.0, min(1.0, float(weight)))
 
         int_score = int(round(self.score))
+
+        if self.score >= 80.0:
+            bar_color = "#10B981"
+        elif self.score >= 70.0:
+            bar_color = "#3B82F6"
+        elif self.score >= 60.0:
+            bar_color = "#F59E0B"
+        elif self.score >= 50.0:
+            bar_color = "#F97316"
+        else:
+            bar_color = "#EF4444"
+
         self._lbl_score.setText(f"{int_score}")
+        self._lbl_score.setStyleSheet(
+            f"color: {bar_color}; font-size: 13px; font-weight: 600;"
+        )
+        self._bar.setStyleSheet(
+            f"QProgressBar {{"
+            f"    background-color: {BORDER_SOFT};"
+            f"    border: none;"
+            f"    border-radius: 3px;"
+            f"}}"
+            f"QProgressBar::chunk {{"
+            f"    background-color: {bar_color};"
+            f"    border-radius: 3px;"
+            f"}}"
+        )
 
         # Cập nhật tooltip theo chuẩn SKILLS.md
         weight_percent = int(round(self.weight * 100))

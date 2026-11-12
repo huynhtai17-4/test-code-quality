@@ -322,12 +322,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             f"● Đang kết nối {config.SERVER_HOST}:{config.SERVER_PORT}...",
             status_bar,
         )
-        self.lbl_connection.setStyleSheet(f"color: {theme.TEXT_MUTED};")
+        self.lbl_connection.setStyleSheet(f"color: {theme.TEXT_MUTED}; padding-left: 14px;")
         status_bar.addWidget(self.lbl_connection)
 
         # Nhãn dự án hiện tại bên phải
         self.lbl_current_project = QLabel("Dự án: [Chưa chọn]", status_bar)
-        self.lbl_current_project.setStyleSheet(f"color: {theme.TEXT_MUTED};")
+        self.lbl_current_project.setStyleSheet(f"color: {theme.TEXT_MUTED}; padding-right: 18px;")
         status_bar.addPermanentWidget(self.lbl_current_project)
 
     def _setup_shortcuts(self) -> None:
@@ -515,7 +515,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                 f"● Đã kết nối {config.SERVER_HOST}:{config.SERVER_PORT}"
             )
             self.lbl_connection.setStyleSheet(
-                f"color: {theme.GRADE_A}; font-weight: 500;"
+                f"color: {theme.GRADE_A}; font-weight: 500; padding-left: 14px;"
             )
             if self.lbl_sidebar_server is not None:
                 self.lbl_sidebar_server.setText(
@@ -527,7 +527,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         else:
             self.lbl_connection.setText("● Mất kết nối máy chủ")
             self.lbl_connection.setStyleSheet(
-                f"color: {theme.GRADE_F}; font-weight: 500;"
+                f"color: {theme.GRADE_F}; font-weight: 500; padding-left: 14px;"
             )
             if self.lbl_sidebar_server is not None:
                 self.lbl_sidebar_server.setText("● Mất kết nối")
