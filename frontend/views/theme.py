@@ -3,8 +3,8 @@
 import datetime
 from pathlib import Path
 from typing import Any
-from PyQt6.QtGui import QFont, QFontDatabase  # pylint: disable=no-name-in-module
-from PyQt6.QtWidgets import QApplication  # pylint: disable=no-name-in-module
+from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette  # pylint: disable=no-name-in-module
+from PyQt6.QtWidgets import QApplication, QToolTip  # pylint: disable=no-name-in-module
 
 from frontend.charts.style import TEN_TIEU_CHI
 
@@ -134,6 +134,17 @@ def init_app_fonts(app: Any | None = None) -> str:
             global_font = QFont(chosen_family, 10)
             global_font.setStyleHint(QFont.StyleHint.Monospace)
             target_app.setFont(global_font)
+
+            # Đồng bộ bảng màu và phông chữ QToolTip sắc nét toàn cục
+            pal = target_app.palette()
+            pal.setColor(QPalette.ColorRole.ToolTipBase, QColor("#0F172A"))
+            pal.setColor(QPalette.ColorRole.ToolTipText, QColor("#FFFFFF"))
+            target_app.setPalette(pal)
+
+            tip_font = QFont("Segoe UI", 10)
+            tip_font.setPointSize(10)
+            tip_font.setWeight(QFont.Weight.Medium)
+            QToolTip.setFont(tip_font)
         except (RuntimeError, TypeError) as err:
             _ = str(err)
 

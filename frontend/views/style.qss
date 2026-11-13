@@ -99,17 +99,17 @@ QScrollArea, QScrollArea > QWidget > QWidget {
 }
 
 /* ===================================================================
-   TOOLTIP POPUP TOÀN ỨNG DỤNG (QToolTip) — SẮC NÉT, ĐỘ TƯƠNG PHẢN CAO
+   TOOLTIP POPUP TOÀN ỨNG DỤNG (QToolTip & QTipLabel) — SẮC NÉT, ĐỘ TƯƠNG PHẢN CAO
    =================================================================== */
-QToolTip {
+QToolTip, QLabel#qtooltip_label {
     background-color: #0F172A;
     color: #FFFFFF;
     border: 1px solid #334155;
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-size: 11px;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
     font-weight: 500;
-    font-family: "Geist Mono", "JetBrains Mono", monospace;
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Roboto", "Helvetica Neue", Arial, sans-serif;
 }
 
 #ServerCard {
