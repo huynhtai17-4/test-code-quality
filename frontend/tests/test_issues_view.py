@@ -211,6 +211,15 @@ def test_issues_view() -> None:
     _assert(view.combo_detail_status.currentData() == "open", "Trạng thái ban đầu sai")
     _assert("refactor lại câu lệnh SQL" in view.edit_detail_note.text(), "Ghi chú ban đầu sai")
 
+    # Kiểm tra Code Snippet Viewer và tô màu dòng lỗi
+    _assert(not view.txt_code_snippet.isHidden(), "Code snippet viewer phải hiển thị")
+    _assert("42 | " in view.txt_code_snippet.toPlainText(), "Phải hiển thị số dòng 42 |")
+    _assert(len(view.txt_code_snippet.extraSelections()) == 1, "Phải có 1 dòng highlight")
+    highlight_color = (
+        view.txt_code_snippet.extraSelections()[0].format.background().color().name().upper()
+    )
+    _assert(highlight_color == "#FDECEC", f"Màu highlight sai: {highlight_color}")
+
     # Kiểm tra lưu ghi chú và đổi trạng thái trong detail panel
     status_msg_received: list[str] = []
     view.status_message.connect(status_msg_received.append)

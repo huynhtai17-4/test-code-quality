@@ -1,7 +1,10 @@
 """Màn hình Phân tích chi tiết chất lượng mã nguồn (AnalysisView) theo SKILLS.md."""
 
+import datetime
+import html
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,7 +15,7 @@ if str(ROOT_DIR) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
-# pylint: disable=wrong-import-position,no-name-in-module
+# pylint: disable=wrong-import-position,no-name-in-module,too-many-lines
 from PyQt6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
@@ -39,8 +42,15 @@ from PyQt6.QtWidgets import (
 )
 
 from frontend.charts.chart_canvas import AnalysisChartCanvas
+from frontend.network import api
+from frontend.views.issues_view import _prepare_snippet_lines
 from frontend.views.theme import (
     BORDER_SOFT,
+    GRADE_A,
+    GRADE_B,
+    GRADE_C,
+    GRADE_D,
+    GRADE_F,
     SURFACE,
     SURFACE_ALT,
     TEXT_MAIN,
@@ -57,6 +67,450 @@ from frontend.views.widgets.score_bar import ScoreBar
 from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.table_utils import chuan_hoa_bang
 from frontend.workers.analysis_worker import AnalysisWorker
+
+_CRITERIA_SPECS = (
+    (
+        "complexity",
+        "Độ phức tạp & bảo trì",
+        "Radon CC & MI (Độ phức tạp Cyclomatic & chỉ số bảo trì mã nguồn)",
+    ),
+    (
+        "security",
+        "An toàn bảo mật",
+        "Bandit SAST (Quét lỗ hổng an toàn, SQLi, hardcoded credentials)",
+    ),
+    (
+        "pylint",
+        "Quy chuẩn mã nguồn",
+        "Pylint (Quy chuẩn cấu trúc PEP8, chuẩn cú pháp và thiết kế)",
+    ),
+    (
+        "health",
+        "Sức khỏe & Git",
+        "Git Health (Tần suất commit, hoạt động phát triển và tài liệu)",
+    ),
+    (
+        "dependency",
+        "Thư viện & CVE",
+        "Pip-audit (Kiểm tra lỗ hổng đã công bố CVE trong các thư viện phụ thuộc)",
+    ),
+    (
+        "malware",
+        "Phát hiện mã độc & AST",
+        "Malware AST (Phát hiện thực thi động eval/exec, backdoor, entropy cao & shell)",
+    ),
+)
+
+
+def _get_score_color(score: float) -> str:
+    """Trả về mã màu chuẩn theo thang điểm (A-F)."""
+    if score >= 90.0:
+        return GRADE_A
+    if score >= 75.0:
+        return GRADE_B
+    if score >= 60.0:
+        return GRADE_C
+    if score >= 40.0:
+        return GRADE_D
+    return GRADE_F
+
+
+def _get_grade_for_score(score: float) -> str:
+    """Xếp loại ký tự A, B, C, D, F theo điểm số."""
+    if score >= 90.0:
+        return "A"
+    if score >= 75.0:
+        return "B"
+    if score >= 60.0:
+        return "C"
+    if score >= 40.0:
+        return "D"
+    return "F"
+
+
+def _compute_dual_scores(
+    crit_scores: dict[str, float],
+    raw_q: Any,
+    raw_s: Any,
+    fallback: float,
+) -> tuple[float, float]:
+    """Tính toán hoặc trích xuất fallback cho cặp chỉ số quality & security."""
+    if raw_q is None:
+        q_vals = [
+            float(crit_scores[k])
+            for k in ("complexity", "pylint", "health")
+            if k in crit_scores
+        ]
+        q_score = (sum(q_vals) / len(q_vals)) if q_vals else fallback
+    else:
+        q_score = float(raw_q)
+
+    if raw_s is None:
+        s_vals = [
+            float(crit_scores[k])
+            for k in ("security", "dependency", "malware")
+            if k in crit_scores
+        ]
+        s_score = (sum(s_vals) / len(s_vals)) if s_vals else fallback
+    else:
+        s_score = float(raw_s)
+
+    return q_score, s_score
+
+
+def _render_crit_table(crit_scores: dict[str, float]) -> str:
+    """Tạo các hàng HTML cho bảng 6 tiêu chí kiểm định."""
+    crit_rows = []
+    for key, name, desc in _CRITERIA_SPECS:
+        val = float(crit_scores.get(key, 0.0))
+        clr = _get_score_color(val)
+        grd = _get_grade_for_score(val)
+        crit_rows.append(
+            f'<tr><td style="font-weight: 600; color: #0F172A;">{html.escape(name)}</td>'
+            f'<td style="color: #64748B;">{html.escape(desc)}</td>'
+            f'<td><div style="font-weight: 700; margin-bottom: 4px;">{val:.1f} / 100</div>'
+            f'<div class="progress-bar-bg">'
+            f'<div class="progress-bar-fill" style="width: {min(100.0, max(0.0, val)):.1f}%; '
+            f'background-color: {clr};"></div></div></td>'
+            f'<td style="font-weight: 700; color: {clr}; font-size: 14px;">{grd}</td></tr>'
+        )
+    return "\n".join(crit_rows)
+
+
+def _render_charts_section(radar_b64: str, risk_b64: str) -> str:
+    """Tạo khối HTML nhúng biểu đồ radar đa giác và top tệp tin rủi ro."""
+    if not (radar_b64 or risk_b64):
+        return ""
+    charts_section = (
+        '<div class="section-title">Biểu đồ Phân tích Trực quan</div>'
+        '<div class="charts-grid">'
+    )
+    if radar_b64:
+        charts_section += (
+            f'<div class="chart-box"><div style="font-size: 13px; font-weight: 600; '
+            f'color: #475569; margin-bottom: 8px;">Đa giác Tiêu chí Kiểm định</div>'
+            f'<img src="data:image/png;base64,{radar_b64}" alt="Đa giác tiêu chí" /></div>'
+        )
+    if risk_b64:
+        charts_section += (
+            f'<div class="chart-box"><div style="font-size: 13px; font-weight: 600; '
+            f'color: #475569; margin-bottom: 8px;">Top Tệp tin Nguy cơ Cao nhất</div>'
+            f'<img src="data:image/png;base64,{risk_b64}" alt="Top tệp tin rủi ro" /></div>'
+        )
+    charts_section += '</div>'
+    return charts_section
+
+
+def _render_snippet_html(snippet_raw: Any, line_val: Any) -> str:
+    """Tạo khối HTML cho trích đoạn code snippet với đánh số dòng."""
+    if not snippet_raw:
+        return ""
+    try:
+        t_line = int(line_val) if line_val is not None else 0
+    except (ValueError, TypeError):
+        t_line = 0
+    lines = _prepare_snippet_lines(snippet_raw, t_line)
+    lines_rendered = []
+    if t_line > 0:
+        for ln, l_text in lines:
+            esc = html.escape(l_text)
+            if ln == t_line:
+                lines_rendered.append(f'<span class="err-line">{esc}</span>')
+            else:
+                lines_rendered.append(esc)
+    else:
+        for _, l_text in lines:
+            lines_rendered.append(html.escape(l_text))
+    return f'<pre class="code-snippet"><code>{"\n".join(lines_rendered)}</code></pre>'
+
+
+def _render_issues_section(crit_high_issues: list[dict[str, Any]]) -> str:  # pylint: disable=too-many-locals
+    """Tạo HTML danh sách sự cố Critical/High kèm code snippet & remediation."""
+    if not crit_high_issues:
+        return (
+            '<div style="padding: 16px 20px; background: #F0FDF4; border: 1px solid #DCFCE7; '
+            'border-radius: 6px; color: #166534; font-size: 13px;">'
+            '✓ Tuyệt vời! Không ghi nhận lỗ hổng nghiêm trọng (Critical) hoặc mức cao (High) nào.'
+            '</div>'
+        )
+
+    cards = []
+    for issue in crit_high_issues:
+        sev = str(issue.get("severity") or "Critical").capitalize()
+        is_crit = sev == "Critical"
+        sev_class = "" if is_crit else "high-sev"
+        badge_class = "badge-critical" if is_crit else "badge-high"
+        sev_title = "Nghiêm trọng (Critical)" if is_crit else "Mức cao (High)"
+
+        fpath = str(issue.get("file_path") or issue.get("file") or "—")
+        line_val = issue.get("line_number")
+        if line_val is None:
+            line_val = issue.get("line")
+        loc_disp = f"{fpath}:{line_val}" if line_val else fpath
+
+        tool_disp = str(issue.get("tool") or "").upper()
+        rule_disp = str(issue.get("rule_code") or issue.get("test_id") or "").strip()
+        meta_str = f"Công cụ: {tool_disp}"
+        if rule_disp:
+            meta_str += f" · Mã kiểm tra: {rule_disp}"
+
+        msg = str(issue.get("message") or "")
+        remed = str(issue.get("remediation") or "").strip()
+
+        snippet_html = _render_snippet_html(issue.get("code_snippet"), line_val)
+        remediation_html = ""
+        if remed:
+            remediation_html = (
+                f'<div class="remediation-box">'
+                f'<strong>Hướng dẫn khắc phục:</strong> {html.escape(remed)}'
+                f'</div>'
+            )
+
+        card_html = (
+            f'<div class="issue-card {sev_class}">'
+            f'<div class="issue-header">'
+            f'<div><span class="issue-badge {badge_class}">{sev_title}</span> '
+            f'<span class="issue-location">{html.escape(loc_disp)}</span></div>'
+            f'<span style="font-size: 12px; color: #64748B;">{html.escape(meta_str)}</span>'
+            f'</div>'
+            f'<div class="issue-msg">{html.escape(msg)}</div>'
+            f'{snippet_html}'
+            f'{remediation_html}'
+            f'</div>'
+        )
+        cards.append(card_html)
+
+    return "\n".join(cards)
+
+
+def _build_html_report_content(  # pylint: disable=too-many-locals
+    report_meta: dict[str, Any],
+    crit_scores: dict[str, float],
+    radar_b64: str,
+    risk_b64: str,
+    crit_high_issues: list[dict[str, Any]],
+) -> str:
+    """Tạo tài liệu HTML báo cáo hoàn chỉnh độc lập hỗ trợ Ctrl+P xuất PDF."""
+    now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    proj_esc = html.escape(str(report_meta.get("project_name", "Dự án")))
+    session_id = report_meta.get("session_id")
+    session_str = f"#{session_id}" if session_id else "Chưa lưu"
+
+    total_score = float(report_meta.get("total_score", 0.0))
+    grade = str(report_meta.get("grade", "A"))
+    quality_score = float(report_meta.get("quality_score", 0.0))
+    security_score = float(report_meta.get("security_score", 0.0))
+
+    tot_color = _get_score_color(total_score)
+    qual_color = _get_score_color(quality_score)
+    sec_color = _get_score_color(security_score)
+
+    crit_table_html = _render_crit_table(crit_scores)
+    charts_section = _render_charts_section(radar_b64, risk_b64)
+    issues_section_content = _render_issues_section(crit_high_issues)
+
+    sev_dist = report_meta.get("sev_dist", {})
+    crit_cnt = sev_dist.get("Critical", 0)
+    high_cnt = sev_dist.get("High", 0)
+    med_cnt = sev_dist.get("Medium", 0)
+    low_cnt = sev_dist.get("Low", 0)
+
+    files_text = str(report_meta.get("files_text", "—"))
+    loc_text = str(report_meta.get("loc_text", "—"))
+    issues_text = str(report_meta.get("issues_text", "0"))
+
+    return f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Báo Cáo Kiểm Định - {proj_esc}</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: #F8FAFC; color: #1E293B; line-height: 1.5; padding: 30px;
+  }}
+  .report-container {{
+    max-width: 1000px; margin: 0 auto; background: #FFFFFF; border: 1px solid #E2E8F0;
+    border-radius: 8px; padding: 36px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  }}
+  .header-section {{
+    display: flex; justify-content: space-between; align-items: flex-start;
+    border-bottom: 2px solid #E2E8F0; padding-bottom: 20px; margin-bottom: 24px;
+  }}
+  .header-title h1 {{ font-size: 20px; font-weight: 700; color: #0F172A; margin-bottom: 4px; }}
+  .header-title .subtitle {{ font-size: 13px; color: #64748B; }}
+  .meta-badge {{ text-align: right; font-size: 12px; color: #64748B; line-height: 1.6; }}
+  .no-print-banner {{
+    background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; padding: 10px 16px;
+    border-radius: 6px; margin-bottom: 20px; font-size: 13px; text-align: center;
+  }}
+  .summary-grid {{
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;
+  }}
+  .summary-card {{
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 18px; text-align: center;
+  }}
+  .summary-card .card-label {{
+    font-size: 11px; font-weight: 600; color: #64748B; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px;
+  }}
+  .summary-card .card-value {{ font-size: 26px; font-weight: 800; margin-bottom: 2px; }}
+  .summary-card .card-sub {{ font-size: 11px; color: #94A3B8; }}
+  .stats-strip {{
+    display: flex; justify-content: space-around; background: #F8FAFC; border: 1px solid #EEF2F6;
+    border-radius: 6px; padding: 12px; margin-bottom: 28px;
+  }}
+  .stat-item {{ text-align: center; }}
+  .stat-item .val {{ font-size: 16px; font-weight: 700; color: #0F172A; }}
+  .stat-item .lbl {{ font-size: 11px; color: #64748B; }}
+  .section-title {{
+    font-size: 15px; font-weight: 700; color: #0F172A; margin: 28px 0 14px 0;
+    padding-bottom: 6px; border-bottom: 1px solid #E2E8F0;
+  }}
+  .charts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 28px; }}
+  .chart-box {{
+    background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px; text-align: center;
+  }}
+  .chart-box img {{ max-width: 100%; height: auto; border-radius: 4px; }}
+  table.report-table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }}
+  table.report-table th, table.report-table td {{
+    padding: 10px 12px; text-align: left; border-bottom: 1px solid #E2E8F0;
+  }}
+  table.report-table th {{
+    background: #F8FAFC; color: #475569; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }}
+  .progress-bar-bg {{
+    background: #E2E8F0; border-radius: 4px; height: 6px; width: 100%; overflow: hidden; margin-top: 4px;
+  }}
+  .progress-bar-fill {{ height: 100%; border-radius: 4px; }}
+  .issue-card {{
+    border: 1px solid #E2E8F0; border-left: 4px solid #B42318; border-radius: 6px;
+    padding: 14px; margin-bottom: 14px; background: #FFFFFF; page-break-inside: avoid;
+  }}
+  .issue-card.high-sev {{ border-left-color: #D9622B; }}
+  .issue-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }}
+  .issue-badge {{
+    font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; color: #FFFFFF; display: inline-block;
+  }}
+  .badge-critical {{ background: #B42318; }}
+  .badge-high {{ background: #D9622B; }}
+  .issue-location {{
+    font-family: ui-monospace, SFMono-Regular, "Geist Mono", Consolas, monospace;
+    font-size: 12px; font-weight: 600; color: #0F172A; margin-left: 6px;
+  }}
+  .issue-msg {{ font-size: 13px; color: #334155; margin-bottom: 8px; line-height: 1.4; }}
+  pre.code-snippet {{
+    background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 4px; padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, "Geist Mono", Consolas, monospace; font-size: 11px;
+    color: #1E293B; overflow-x: auto; margin: 8px 0; line-height: 1.45;
+  }}
+  pre.code-snippet .err-line {{
+    background: #FDECEC; color: #B42318; font-weight: 600; display: block; margin: 0 -10px; padding: 0 10px;
+  }}
+  .remediation-box {{
+    background: #F0FDF4; border: 1px solid #DCFCE7; border-radius: 4px; padding: 8px 10px;
+    font-size: 12px; color: #166534; margin-top: 6px;
+  }}
+  @media print {{
+    body {{ background: #FFFFFF; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    .report-container {{ border: none; box-shadow: none; padding: 0; max-width: 100%; }}
+    .no-print {{ display: none !important; }}
+    .page-break {{ page-break-before: always; }}
+    .issue-card {{ page-break-inside: avoid; }}
+    @page {{ size: A4; margin: 12mm 15mm; }}
+  }}
+</style>
+</head>
+<body>
+<div class="report-container">
+  <div class="no-print no-print-banner">
+    📄 <b>Báo cáo kỹ thuật độc lập</b> · Nhấn phím <b>Ctrl + P</b> để in hoặc xuất PDF chuẩn tài liệu.
+  </div>
+
+  <div class="header-section">
+    <div class="header-title">
+      <h1>Báo Cáo Kiểm Định Chất Lượng & An Toàn Mã Nguồn</h1>
+      <div class="subtitle">Dự án: <b>{proj_esc}</b> · Hệ thống đánh giá tự động đa tầng</div>
+    </div>
+    <div class="meta-badge">
+      <div>Phiên quét: <b>{session_str}</b></div>
+      <div>Thời gian xuất: {now_str}</div>
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="card-label">Xếp loại & Tổng điểm</div>
+      <div class="card-value" style="color: {tot_color};">
+        {grade} <span style="font-size: 20px;">({total_score:.1f})</span>
+      </div>
+      <div class="card-sub">Thang điểm tổng hợp 0–100</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Chất lượng Code</div>
+      <div class="card-value" style="color: {qual_color};">{quality_score:.1f}</div>
+      <div class="card-sub">Cấu trúc, PEP8, độ phức tạp</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">An toàn Bảo mật</div>
+      <div class="card-value" style="color: {sec_color};">{security_score:.1f}</div>
+      <div class="card-sub">SAST, CVE, hành vi mã độc</div>
+    </div>
+  </div>
+
+  <div class="stats-strip">
+    <div class="stat-item"><div class="val">{files_text}</div><div class="lbl">Tệp tin</div></div>
+    <div class="stat-item"><div class="val">{loc_text}</div><div class="lbl">Dòng mã (LOC)</div></div>
+    <div class="stat-item"><div class="val">{issues_text}</div><div class="lbl">Tổng số lỗi</div></div>
+    <div class="stat-item">
+      <div class="val" style="color: #B42318;">{crit_cnt}</div>
+      <div class="lbl">Nghiêm trọng</div>
+    </div>
+    <div class="stat-item">
+      <div class="val" style="color: #D9622B;">{high_cnt}</div>
+      <div class="lbl">Mức cao</div>
+    </div>
+    <div class="stat-item">
+      <div class="val" style="color: #C79A0A;">{med_cnt}</div>
+      <div class="lbl">Trung bình</div>
+    </div>
+    <div class="stat-item">
+      <div class="val" style="color: #5E7A94;">{low_cnt}</div>
+      <div class="lbl">Mức thấp</div>
+    </div>
+  </div>
+
+  <div class="section-title">Điểm số Chi tiết 6 Tiêu chí Kiểm định</div>
+  <table class="report-table">
+    <thead>
+      <tr>
+        <th style="width: 24%;">Tiêu chí</th>
+        <th style="width: 46%;">Mô tả & Công cụ đo lường</th>
+        <th style="width: 18%;">Điểm / 100</th>
+        <th style="width: 12%;">Hạng</th>
+      </tr>
+    </thead>
+    <tbody>
+      {crit_table_html}
+    </tbody>
+  </table>
+
+  {charts_section}
+
+  <div class="section-title">Danh sách Sự cố Bảo mật Nguy cơ Cao (Critical & High)</div>
+  {issues_section_content}
+
+  <div style="margin-top: 36px; padding-top: 14px; border-top: 1px solid #E2E8F0; text-align: center; font-size: 11px; color: #94A3B8;">
+    Báo cáo kỹ thuật được tạo tự động bởi Hệ thống Phân tích Chất lượng Mã Nguồn Desktop.
+  </div>
+</div>
+</body>
+</html>
+"""
+
 
 _FILE_HEADERS = (
     "Tên tệp tin",
@@ -240,6 +694,10 @@ class AnalysisView(QWidget):
         self._lbl_title: QLabel | None = None
         self._lbl_meta: QLabel | None = None
         self._btn_reanalyze: QPushButton | None = None
+        self._btn_export_html: QPushButton | None = None
+        self._current_data: dict[str, Any] = {}
+        self._lbl_quality_val: QLabel | None = None
+        self._lbl_security_val: QLabel | None = None
         self._notice: InlineNotice | None = None
 
         self._score_stack: QStackedLayout | None = None
@@ -311,6 +769,12 @@ class AnalysisView(QWidget):
         self._lbl_title = header.lbl_title
         self._lbl_meta = header.lbl_subtitle
 
+        self._btn_export_html = QPushButton("Xuất báo cáo", self)
+        self._btn_export_html.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_export_html.clicked.connect(self._on_export_html_report)
+        header.them_nut_phai(self._btn_export_html)
+        self._btn_export_html.hide()
+
         self._btn_reanalyze = QPushButton("Phân tích lại", self)
         self._btn_reanalyze.setProperty("role", "primary")
         self._btn_reanalyze.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -320,24 +784,76 @@ class AnalysisView(QWidget):
         self._btn_reanalyze.hide()
         return header
 
+    def _create_flat_metric_card(
+        self,
+        title: str,
+        subtitle: str,
+        parent: QWidget,
+    ) -> tuple[QFrame, QLabel]:
+        """Tạo thẻ chỉ số phẳng nền SURFACE, viền BORDER_SOFT, bo góc 6px."""
+        card = QFrame(parent)
+        card.setStyleSheet(
+            f"QFrame {{ background-color: {SURFACE}; border: 1px solid {BORDER_SOFT}; "
+            f"border-radius: 6px; }} QLabel {{ border: none; background: transparent; }}"
+        )
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(12, 8, 12, 8)
+        vbox.setSpacing(2)
+
+        lbl_title = QLabel(title, card)
+        lbl_title.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600;")
+
+        lbl_score = QLabel("— / 100", card)
+        lbl_score.setFont(lay_font_code(14))
+        lbl_score.setStyleSheet(f"color: {TEXT_MAIN}; font-weight: bold;")
+
+        lbl_sub = QLabel(subtitle, card)
+        lbl_sub.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
+
+        vbox.addWidget(lbl_title)
+        vbox.addWidget(lbl_score)
+        vbox.addWidget(lbl_sub)
+        return card, lbl_score
+
     def _create_results_block(self) -> QWidget:
-        """Tạo khối hiển thị điểm tổng và 5 thanh tiêu chí (State 0)."""
+        """Tạo khối hiển thị điểm tổng, 2 thẻ chỉ số phẳng và 6 thanh tiêu chí (State 0)."""
         card = QFrame(self)
         card.setStyleSheet(
             f"QFrame {{ background-color: {SURFACE};"
             f" border: 1px solid {BORDER_SOFT}; border-radius: 6px; }}"
         )
         h_layout = QHBoxLayout(card)
-        h_layout.setContentsMargins(24, 18, 24, 18)
-        h_layout.setSpacing(28)
+        h_layout.setContentsMargins(20, 16, 20, 16)
+        h_layout.setSpacing(20)
 
         left_col = QWidget(card)
-        left_col.setFixedWidth(240)
+        left_col.setFixedWidth(160)
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(0, 0, 0, 0)
         self._grade_label = GradeLabel("A", 100.0, left_col)
         left_layout.addWidget(self._grade_label, alignment=Qt.AlignmentFlag.AlignCenter)
         h_layout.addWidget(left_col)
+
+        # Cột 2 thẻ chỉ số phẳng: Chất lượng Code & An toàn Bảo mật
+        dual_col = QWidget(card)
+        dual_col.setFixedWidth(240)
+        dual_layout = QVBoxLayout(dual_col)
+        dual_layout.setContentsMargins(0, 0, 0, 0)
+        dual_layout.setSpacing(10)
+
+        card_qual, self._lbl_quality_val = self._create_flat_metric_card(
+            "Chất lượng Code",
+            "Cấu trúc, PEP8, độ phức tạp",
+            dual_col,
+        )
+        card_sec, self._lbl_security_val = self._create_flat_metric_card(
+            "An toàn Bảo mật",
+            "SAST, CVE, hành vi mã độc",
+            dual_col,
+        )
+        dual_layout.addWidget(card_qual)
+        dual_layout.addWidget(card_sec)
+        h_layout.addWidget(dual_col)
 
         v_line = QFrame(card)
         v_line.setFixedWidth(1)
@@ -349,7 +865,14 @@ class AnalysisView(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        criteria_keys = ("complexity", "security", "pylint", "health", "dependency")
+        criteria_keys = (
+            "complexity",
+            "security",
+            "pylint",
+            "health",
+            "dependency",
+            "malware",
+        )
         for key in criteria_keys:
             score_bar = ScoreBar(key, score=0.0, parent=right_col)
             self._score_bars[key] = score_bar
@@ -597,6 +1120,8 @@ class AnalysisView(QWidget):
                 self._tab_widget.hide()
             if self._btn_reanalyze:
                 self._btn_reanalyze.hide()
+            if self._btn_export_html:
+                self._btn_export_html.hide()
             if self._lbl_meta:
                 self._lbl_meta.setText("Chưa có phiên phân tích nào")
             if self._notice:
@@ -659,19 +1184,33 @@ class AnalysisView(QWidget):
         if self._lbl_files:
             self._lbl_files.setText(str(files_val) if files_val is not None else "—")
 
+    @staticmethod
+    def _set_metric_score_label(label: QLabel | None, score: float) -> None:
+        """Cập nhật giá trị và màu sắc theo thang điểm."""
+        if not label:
+            return
+        bounded = max(0.0, min(100.0, float(score)))
+        color = _get_score_color(bounded)
+        score_text = f"{int(bounded)}" if bounded.is_integer() else f"{bounded:.1f}"
+        label.setText(f"{score_text} / 100")
+        label.setStyleSheet(f"color: {color}; font-weight: bold; font-size: 14px;")
+
     def load_session_data(self, data: dict[str, Any]) -> None:
         """Cập nhật toàn bộ giao diện từ kết quả phân tích."""
         if self._notice:
             self._notice.hide()
 
+        self._current_data = dict(data)
         self._session_id = data.get("session_id") or data.get("id")
         score = float(data.get("total_score", 0.0))
-        grade = str(data.get("grade") or "A")
+        grade = str(data.get("grade") or _get_grade_for_score(score))
 
         if self._score_stack:
             self._score_stack.setCurrentIndex(0)
         if hasattr(self, "_tab_widget") and self._tab_widget:
             self._tab_widget.show()
+        if self._btn_export_html:
+            self._btn_export_html.show()
         if self._btn_reanalyze:
             self._btn_reanalyze.setText("Phân tích lại")
             self._btn_reanalyze.show()
@@ -680,6 +1219,12 @@ class AnalysisView(QWidget):
             self._grade_label.set_grade_and_score(grade, score)
 
         crit_scores = data.get("criteria_scores", {})
+        q_score, s_score = _compute_dual_scores(
+            crit_scores, data.get("quality_score"), data.get("security_score"), score
+        )
+        self._set_metric_score_label(self._lbl_quality_val, q_score)
+        self._set_metric_score_label(self._lbl_security_val, s_score)
+
         for key, score_bar_item in self._score_bars.items():
             val = float(crit_scores.get(key, 0.0))
             score_bar_item.set_score(val, animate=True)
@@ -711,6 +1256,8 @@ class AnalysisView(QWidget):
             self._score_stack.setCurrentIndex(1)
         if hasattr(self, "_tab_widget") and self._tab_widget:
             self._tab_widget.hide()
+        if self._btn_export_html:
+            self._btn_export_html.hide()
         if self._progress_bar:
             self._progress_bar.setValue(5)
         if self._lbl_scanning_step:
@@ -747,6 +1294,8 @@ class AnalysisView(QWidget):
         """Xử lý khi tiến trình phân tích gặp lỗi."""
         if self._score_stack:
             self._score_stack.setCurrentIndex(2)
+        if self._btn_export_html:
+            self._btn_export_html.hide()
         if self._notice:
             self._notice.set_notice(f"Phân tích thất bại: {error_msg}", "error", "Thử lại")
             self._notice.show()
@@ -772,6 +1321,76 @@ class AnalysisView(QWidget):
                 self.status_message.emit(f"Đã lưu biểu đồ thành công: {file_path}")
             else:
                 self.status_message.emit("Lưu biểu đồ thất bại.")
+
+    def _on_export_html_report(self) -> None:
+        """Hộp thoại lưu báo cáo HTML độc lập chuẩn kỹ thuật."""
+        safe_name = re.sub(r"[^\w\-]", "_", self._project_name.lower())
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Xuất báo cáo HTML",
+            f"bao_cao_{safe_name}.html",
+            "Trang web HTML (*.html)",
+        )
+        if not file_path:
+            return
+
+        html_content = self.generate_html_report()
+        try:
+            with open(file_path, "w", encoding="utf-8") as f_out:
+                f_out.write(html_content)
+            self.status_message.emit(f"Đã xuất báo cáo HTML thành công: {file_path}")
+        except OSError as exc:
+            logger.error("Lỗi khi ghi tệp báo cáo HTML: %s", exc)
+            self.status_message.emit(f"Xuất báo cáo thất bại: {exc}")
+
+    def _collect_critical_high_issues(self, data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Lọc và trả về danh sách lỗi Critical / High từ dữ liệu hoặc API."""
+        raw_issues = data.get("issues")
+        if not raw_issues and self._session_id:
+            try:
+                res = api.list_issues(int(self._session_id))
+                if isinstance(res, dict) and res.get("status") == "ok":
+                    raw_issues = res.get("data", [])
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.debug("Không thể lấy danh sách issues từ API: %s", exc)
+
+        crit_high: list[dict[str, Any]] = []
+        if isinstance(raw_issues, list):
+            for it in raw_issues:
+                sev = str(it.get("severity") or "").capitalize()
+                if sev in ("Critical", "High"):
+                    crit_high.append(it)
+        return crit_high
+
+    def generate_html_report(self) -> str:
+        """Tạo mã nguồn HTML báo cáo kỹ thuật độc lập hỗ trợ in ấn (Ctrl+P xuất PDF)."""
+        data = self._current_data or {}
+        score = float(data.get("total_score", 0.0))
+        grade = str(data.get("grade") or _get_grade_for_score(score))
+        crit_scores = data.get("criteria_scores", {})
+        q_score, s_score = _compute_dual_scores(
+            crit_scores, data.get("quality_score"), data.get("security_score"), score
+        )
+
+        crit_high = self._collect_critical_high_issues(data)
+        report_meta = {
+            "project_name": self._project_name,
+            "session_id": self._session_id,
+            "total_score": score,
+            "grade": grade,
+            "quality_score": q_score,
+            "security_score": s_score,
+            "loc_text": self._lbl_loc.text() if self._lbl_loc else "—",
+            "files_text": self._lbl_files.text() if self._lbl_files else "—",
+            "issues_text": self._lbl_issues.text() if self._lbl_issues else "0",
+            "sev_dist": data.get("severity_distribution", {}),
+        }
+        radar_b64 = self._canvas_radar.export_base64_png() if self._canvas_radar else ""
+        risk_b64 = self._canvas_top_risk.export_base64_png() if self._canvas_top_risk else ""
+
+        return _build_html_report_content(
+            report_meta, crit_scores, radar_b64, risk_b64, crit_high
+        )
 
 
 def main() -> None:

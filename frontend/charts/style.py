@@ -3,13 +3,14 @@
 from typing import Any
 import matplotlib as mpl
 
-# Bảng ánh xạ 5 tiêu chí chấm điểm chất lượng mã nguồn
+# Bảng ánh xạ các tiêu chí chấm điểm chất lượng mã nguồn
 TEN_TIEU_CHI: dict[str, str] = {
     "complexity": "Độ phức tạp & bảo trì",
     "security": "An toàn bảo mật",
     "pylint": "Quy chuẩn mã nguồn",
     "health": "Sức khỏe & Git",
     "dependency": "Thư viện & CVE",
+    "malware": "Phát hiện mã độc & AST",
 }
 
 # Bảng màu chuẩn dùng cho biểu đồ

@@ -1,10 +1,14 @@
 """Module hợp nhất và phân tích tổng hợp kết quả chất lượng mã nguồn bằng Pandas."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+from backend.analyzer.malware_ast import extract_code_snippet
 
 _VALID_SEVERITIES = ("Critical", "High", "Medium", "Low")
 _SEVERITY_MAPPING = {
@@ -16,7 +20,10 @@ _SEVERITY_MAPPING = {
 }
 
 
-def _normalize_issues(*issue_lists: list[dict[str, Any]]) -> pd.DataFrame:
+def _normalize_issues(
+    *issue_lists: list[dict[str, Any]],
+    working_dir: Path | str | None = None,
+) -> pd.DataFrame:
     """Gom toàn bộ issues vào một danh sách phẳng và nạp vào pandas.DataFrame."""
     flat_rows: list[dict[str, Any]] = []
 
@@ -34,6 +41,12 @@ def _normalize_issues(*issue_lists: list[dict[str, Any]]) -> pd.DataFrame:
             except (ValueError, TypeError):
                 line_no = 0
 
+            remediation = str(item.get("remediation") or item.get("recommendation") or "")
+            snippet = str(item.get("code_snippet") or "")
+            if not snippet and line_no > 0 and working_dir:
+                file_target = Path(working_dir) / raw_file
+                snippet = extract_code_snippet(file_target, line_no)
+
             flat_rows.append({
                 "file": raw_file,
                 "line": line_no,
@@ -41,9 +54,11 @@ def _normalize_issues(*issue_lists: list[dict[str, Any]]) -> pd.DataFrame:
                 "severity": mapped_sev,
                 "message": str(item.get("message", "")),
                 "test_id": str(item.get("test_id", "")),
+                "remediation": remediation,
+                "code_snippet": snippet,
             })
 
-    columns = ["file", "line", "tool", "severity", "message", "test_id"]
+    columns = ["file", "line", "tool", "severity", "message", "test_id", "remediation", "code_snippet"]
     if not flat_rows:
         return pd.DataFrame(columns=columns)
     return pd.DataFrame(flat_rows, columns=columns)
@@ -150,9 +165,10 @@ def aggregate_analysis_results(
     audit_data: dict[str, Any],
     health_data: dict[str, Any],
     flake8_data: dict[str, Any] | None = None,
+    malware_data: dict[str, Any] | None = None,
+    working_dir: Path | str | None = None,
 ) -> dict[str, Any]:
-    """
-    Hợp nhất và phân tích kết quả từ các module phân tích bằng Pandas.
+    """Hợp nhất và phân tích kết quả từ các module phân tích bằng Pandas.
 
     Args:
         radon_data: Kết quả đo độ phức tạp và chỉ số bảo trì từ Radon.
@@ -161,6 +177,8 @@ def aggregate_analysis_results(
         audit_data: Kết quả kiểm tra CVE phụ thuộc từ Pip-audit.
         health_data: Kết quả kiểm tra sức khỏe và cấu trúc dự án.
         flake8_data: Kết quả phân tích phong cách PEP 8 từ Flake8 (tùy chọn).
+        malware_data: Kết quả quét mã độc AST tĩnh (tùy chọn).
+        working_dir: Thư mục nguồn để trích xuất code snippet (tùy chọn).
 
     Returns:
         dict tổng hợp thống kê mức độ nghiêm trọng, file summary và top rủi ro.
@@ -174,8 +192,10 @@ def aggregate_analysis_results(
     ]
     if flake8_data and isinstance(flake8_data, dict):
         issue_lists.append(flake8_data.get("issues", []))
+    if malware_data and isinstance(malware_data, dict):
+        issue_lists.append(malware_data.get("issues", []))
 
-    df_issues = _normalize_issues(*issue_lists)
+    df_issues = _normalize_issues(*issue_lists, working_dir=working_dir)
 
     df_radon = _extract_radon_df(radon_data)
     severity_dist = _build_severity_distribution(df_issues)
@@ -193,28 +213,6 @@ def aggregate_analysis_results(
     }
 
 
-def _default_radon_result(_path: Path) -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "files": [{"file": "sample_vulnerable.py", "cc": 4.2, "mi": 65.0}],
-    }
-
-
-def _default_pylint_result(_path: Path) -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "issues": [
-            {
-                "tool": "pylint",
-                "file": "sample_vulnerable.py",
-                "line": 1,
-                "severity": "Low",
-                "message": "Missing module docstring (C0114)",
-            }
-        ],
-    }
-
-
 def _run_sample_aggregation() -> None:
     """Hàm phụ trợ cho khối __main__ để thực thi quét thử và in kết quả."""
     import sys  # pylint: disable=import-outside-toplevel
@@ -225,6 +223,7 @@ def _run_sample_aggregation() -> None:
     from backend.analyzer.dependency_audit import audit_dependencies  # pylint: disable=import-outside-toplevel
     from backend.analyzer.lint_flake8 import analyze_flake8  # pylint: disable=import-outside-toplevel
     from backend.analyzer.lint_pylint import analyze_pylint  # pylint: disable=import-outside-toplevel
+    from backend.analyzer.malware_ast import analyze_malware  # pylint: disable=import-outside-toplevel
     from backend.analyzer.metrics_radon import analyze_radon  # pylint: disable=import-outside-toplevel
     from backend.analyzer.project_health import analyze_project_health  # pylint: disable=import-outside-toplevel
     from backend.analyzer.security_bandit import analyze_bandit  # pylint: disable=import-outside-toplevel
@@ -239,6 +238,8 @@ def _run_sample_aggregation() -> None:
         audit_data=audit_dependencies(sample_dir),
         health_data=analyze_project_health(sample_dir),
         flake8_data=analyze_flake8(sample_dir),
+        malware_data=analyze_malware(sample_dir),
+        working_dir=sample_dir,
     )
 
     print("\n========== BẢNG PHÂN BỐ MỨC ĐỘ LỖI ==========")

@@ -81,13 +81,20 @@ def test_theme_constants() -> None:
     _assert(theme.GRADE_D == "#D9622B", "GRADE_D sai!")
     _assert(theme.GRADE_F == "#B42318", "GRADE_F sai!")
 
-    # 5 tiêu chí chuẩn
-    expected_criteria = {"complexity", "security", "pylint", "health", "dependency"}
+    # 6 tiêu chí chuẩn
+    expected_criteria = {
+        "complexity",
+        "security",
+        "pylint",
+        "health",
+        "dependency",
+        "malware",
+    }
     _assert(
         set(theme.TEN_TIEU_CHI.keys()) == expected_criteria,
-        "TEN_TIEU_CHI không khớp 5 tiêu chí Backend!",
+        "TEN_TIEU_CHI không khớp 6 tiêu chí Backend!",
     )
-    print(f"    [OK] Đã kiểm tra 5 tiêu chí cốt lõi: {list(theme.TEN_TIEU_CHI.keys())}")
+    print(f"    [OK] Đã kiểm tra 6 tiêu chí cốt lõi: {list(theme.TEN_TIEU_CHI.keys())}")
 
     # Hàm nạp font code
     font_code = theme.lay_font_code(12)

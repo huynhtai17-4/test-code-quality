@@ -2,6 +2,7 @@
 
 from .aggregator import aggregate_analysis_results
 from .dependency_audit import audit_dependencies
+from .malware_ast import analyze_malware, extract_code_snippet
 from .project_health import analyze_project_health
 from .scoring import (
     build_criteria_scores,
@@ -19,6 +20,8 @@ from .source_loader import (
 
 __all__ = [
     "analyze_bandit",
+    "analyze_malware",
+    "extract_code_snippet",
     "audit_dependencies",
     "analyze_project_health",
     "aggregate_analysis_results",

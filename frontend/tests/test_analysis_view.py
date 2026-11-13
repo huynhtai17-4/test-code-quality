@@ -71,6 +71,10 @@ def test_chart_canvas() -> None:
         _assert(saved, "save_chart thất bại")
         _assert(os.path.exists(tmp_path), "File ảnh chưa được tạo")
         _assert(os.path.getsize(tmp_path) > 100, "File ảnh rỗng hoặc không hợp lệ")
+
+        # Kiểm tra xuất Base64 PNG
+        b64_str = canvas.export_base64_png()
+        _assert(isinstance(b64_str, str) and len(b64_str) > 100, "export_base64_png thất bại")
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -137,6 +141,8 @@ def test_analysis_view_ui() -> None:
         "name": "Flask-Demo",
         "total_score": 85.0,
         "grade": "B",
+        "quality_score": 80.0,
+        "security_score": 92.5,
         "total_files": 42,
         "total_loc": 3500,
         "total_issues": 12,
@@ -146,6 +152,7 @@ def test_analysis_view_ui() -> None:
             "pylint": 75.0,
             "health": 85.0,
             "dependency": 95.0,
+            "malware": 92.5,
         },
         "severity_distribution": {
             "Critical": 1,
@@ -155,6 +162,18 @@ def test_analysis_view_ui() -> None:
         },
         "top_risk_files": [
             {"file": "app.py", "total_issues": 8, "critical_count": 1, "high_count": 3},
+        ],
+        "issues": [
+            {
+                "file_path": "backend/auth.py",
+                "line_number": 42,
+                "severity": "Critical",
+                "tool": "malware_ast",
+                "rule_code": "MAL-01",
+                "message": "Phát hiện eval() mã động nguy hiểm",
+                "code_snippet": "eval(user_input)",
+                "remediation": "Tránh dùng eval() và chuyển sang ast.literal_eval()",
+            }
         ],
     }
 
@@ -166,6 +185,32 @@ def test_analysis_view_ui() -> None:
 
     lbl_title = getattr(view, "_lbl_title")
     _assert(lbl_title.text() == "Flask-Demo", "Tên dự án không khớp")
+
+    # Kiểm tra 2 thẻ chỉ số phẳng: Chất lượng Code & An toàn Bảo mật
+    lbl_qual = getattr(view, "_lbl_quality_val")
+    lbl_sec = getattr(view, "_lbl_security_val")
+    _assert(lbl_qual is not None and "80 / 100" in lbl_qual.text(), "Chất lượng Code sai")
+    _assert(lbl_sec is not None and "92.5 / 100" in lbl_sec.text(), "An toàn Bảo mật sai")
+
+    # Kiểm tra 6 thanh tiêu chí
+    score_bars = getattr(view, "_score_bars")
+    _assert(len(score_bars) == 6, f"Phải có 6 thanh tiêu chí, hiện có: {len(score_bars)}")
+    _assert("malware" in score_bars, "Thiếu tiêu chí malware trong ScoreBars")
+
+    # Kiểm tra nút Xuất báo cáo HTML
+    btn_export = getattr(view, "_btn_export_html")
+    _assert(btn_export is not None and not btn_export.isHidden(), "Nút Xuất báo cáo phải hiển thị")
+
+    # Kiểm tra hàm tạo báo cáo HTML
+    html_report = view.generate_html_report()
+    _assert(isinstance(html_report, str) and len(html_report) > 500, "Báo cáo HTML rỗng")
+    _assert("@media print" in html_report, "HTML thiếu cấu hình @media print")
+    _assert("Phát hiện mã độc" in html_report, "HTML thiếu tiêu chí malware")
+    _assert("Chất lượng Code" in html_report, "HTML thiếu thẻ Chất lượng Code")
+    _assert("An toàn Bảo mật" in html_report, "HTML thiếu thẻ An toàn Bảo mật")
+    _assert("backend/auth.py:42" in html_report, "HTML thiếu vị trí lỗi")
+    _assert("eval(user_input)" in html_report, "HTML thiếu trích đoạn mã nguồn")
+    _assert("ast.literal_eval" in html_report, "HTML thiếu đề xuất khắc phục")
 
     # Kiểm tra phát tín hiệu switch_to_issues
     issues_sessions: list[int] = []

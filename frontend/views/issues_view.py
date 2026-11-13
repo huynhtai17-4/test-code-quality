@@ -1,5 +1,6 @@
 """Màn hình Quản lý Lỗi mã nguồn (IssuesView) theo chuẩn kỹ thuật SKILLS.md."""
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,14 @@ from PyQt6.QtCore import (
     Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QFont, QKeySequence, QShortcut
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QKeySequence,
+    QShortcut,
+    QTextCursor,
+    QTextFormat,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -30,6 +38,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QSplitter,
@@ -43,6 +52,7 @@ from PyQt6.QtWidgets import (
 from frontend.network import api
 from frontend.views.theme import (
     BORDER,
+    BORDER_SOFT,
     SEV_CRITICAL,
     SEVERITY_COLORS,
     STATUS_FIXED,
@@ -50,6 +60,7 @@ from frontend.views.theme import (
     STATUS_IN_PROGRESS,
     STATUS_OPEN,
     SURFACE,
+    SURFACE_ALT,
     TEXT_MAIN,
     TEXT_MUTED,
     lay_font_code,
@@ -94,6 +105,8 @@ _TOOL_DISPLAY_MAP: dict[str, str] = {
     "radon": "Radon",
     "pip-audit": "Pip-audit",
     "pip_audit": "Pip-audit",
+    "malware_ast": "Mã độc & AST",
+    "malware": "Mã độc & AST",
     "manual": "Manual",
 }
 
@@ -123,6 +136,43 @@ def _format_location(issue: dict[str, Any]) -> str:
     if line_no is not None and str(line_no).strip():
         return f"{file_path}:{line_no}"
     return file_path or "—"
+
+
+def _prepare_snippet_lines(snippet_raw: Any, target_line: int) -> list[tuple[int, str]]:
+    """Chuẩn hóa code snippet thành danh sách các cặp (số dòng, nội dung hiển thị)."""
+    if isinstance(snippet_raw, str):
+        raw_lines = snippet_raw.splitlines()
+    elif isinstance(snippet_raw, (list, tuple)):
+        raw_lines = list(snippet_raw)
+    elif isinstance(snippet_raw, dict):
+        raw_lines = snippet_raw.get("lines", [])
+        if isinstance(raw_lines, str):
+            raw_lines = raw_lines.splitlines()
+    else:
+        raw_lines = []
+
+    result: list[tuple[int, str]] = []
+    start_line = max(1, target_line - 3) if target_line > 0 else 1
+
+    for idx, item in enumerate(raw_lines):
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            try:
+                ln = int(item[0])
+                txt = str(item[1])
+                result.append((ln, f"{ln} | {txt}"))
+                continue
+            except (ValueError, TypeError):
+                pass
+        line_str = str(item)
+        match = re.match(r"^\s*(\d+)\s*[|:]\s*(.*)$", line_str)
+        if match:
+            ln = int(match.group(1))
+            content = match.group(2)
+            result.append((ln, f"{ln} | {content}"))
+        else:
+            ln = start_line + idx
+            result.append((ln, f"{ln} | {line_str}"))
+    return result
 
 
 class IssueTableModel(QAbstractTableModel):
@@ -535,6 +585,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.badge_severity = SeverityBadge("Medium")
         self.lbl_detail_rule = QLabel("—")
         self.txt_detail_desc = QTextEdit()
+        self.txt_code_snippet = QPlainTextEdit()
         self.combo_detail_status = QComboBox()
         self.edit_detail_note = QLineEdit()
         self.btn_save_note = QPushButton("Lưu ghi chú")
@@ -719,7 +770,18 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.txt_detail_desc.setPlaceholderText(
             "Chọn một dòng lỗi trên bảng để xem chi tiết và khuyến nghị sửa chữa..."
         )
-        layout.addWidget(self.txt_detail_desc, 1)
+        layout.addWidget(self.txt_detail_desc)
+
+        # Code Snippet Viewer
+        self.txt_code_snippet.setReadOnly(True)
+        self.txt_code_snippet.setFont(lay_font_code(11))
+        self.txt_code_snippet.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.txt_code_snippet.setStyleSheet(
+            f"QPlainTextEdit {{ background-color: {SURFACE_ALT}; border: 1px solid {BORDER_SOFT}; "
+            f"border-radius: 4px; padding: 6px; color: {TEXT_MAIN}; }}"
+        )
+        self.txt_code_snippet.setVisible(False)
+        layout.addWidget(self.txt_code_snippet, 1)
 
         # Thanh cập nhật trạng thái & ghi chú
         status_bar_layout = QHBoxLayout()
@@ -823,6 +885,42 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         if isinstance(issue, dict):
             self._display_issue_detail(issue)
 
+    def _display_code_snippet(self, snippet_raw: Any, target_line: int) -> None:
+        """Hiển thị đoạn trích mã nguồn có số dòng và tô màu đỏ nhạt dòng lỗi."""
+        self.txt_code_snippet.clear()
+        self.txt_code_snippet.setExtraSelections([])
+        if not snippet_raw:
+            self.txt_code_snippet.setVisible(False)
+            self.txt_detail_desc.setMaximumHeight(16777215)
+            return
+
+        formatted_lines = _prepare_snippet_lines(snippet_raw, target_line)
+        if not formatted_lines:
+            self.txt_code_snippet.setVisible(False)
+            self.txt_detail_desc.setMaximumHeight(16777215)
+            return
+
+        self.txt_code_snippet.setVisible(True)
+        self.txt_detail_desc.setMaximumHeight(85)
+        full_text = "\n".join(text for _, text in formatted_lines)
+        self.txt_code_snippet.setPlainText(full_text)
+
+        extra_selections: list[QTextEdit.ExtraSelection] = []
+        doc = self.txt_code_snippet.document()
+        if target_line > 0:
+            for block_idx, (ln, _) in enumerate(formatted_lines):
+                if ln == target_line:
+                    block = doc.findBlockByLineNumber(block_idx)
+                    if block.isValid():
+                        sel = QTextEdit.ExtraSelection()
+                        sel.format.setBackground(QColor("#FDECEC"))
+                        sel.format.setProperty(
+                            QTextFormat.Property.FullWidthSelection, True
+                        )
+                        sel.cursor = QTextCursor(block)
+                        extra_selections.append(sel)
+        self.txt_code_snippet.setExtraSelections(extra_selections)
+
     def _display_issue_detail(self, issue: dict[str, Any]) -> None:
         """Hiển thị thông tin chi tiết một lỗi vào panel dưới."""
         if self._detail_stack is not None:
@@ -842,7 +940,20 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.lbl_detail_rule.setText(rule_text)
 
         desc = str(issue.get("message") or "")
+        remediation = str(issue.get("remediation") or "").strip()
+        if remediation:
+            desc = f"{desc}\n\nĐề xuất khắc phục:\n{remediation}"
         self.txt_detail_desc.setPlainText(desc)
+
+        target_line = 0
+        raw_line = issue.get("line_number")
+        if raw_line is None:
+            raw_line = issue.get("line")
+        try:
+            target_line = int(raw_line) if raw_line is not None else 0
+        except (ValueError, TypeError):
+            target_line = 0
+        self._display_code_snippet(issue.get("code_snippet"), target_line)
 
         curr_status = _normalize_status(issue.get("status"))
         idx = self.combo_detail_status.findData(curr_status)
@@ -861,6 +972,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.lbl_detail_rule.setText("—")
         self.txt_detail_desc.clear()
         self.edit_detail_note.clear()
+        self._display_code_snippet(None, 0)
 
     def _on_save_detail_note(self) -> None:
         """Lưu trạng thái và ghi chú từ panel chi tiết xuống cơ sở dữ liệu."""
@@ -1145,6 +1257,15 @@ def _get_mock_issues() -> list[dict[str, Any]]:
             "message": (
                 "B608: Có nguy cơ SQL injection do nối chuỗi trực tiếp vào câu truy vấn.\n"
                 "Khuyến nghị: Sử dụng tham số hóa câu truy vấn (%s) thay vì nối chuỗi."
+            ),
+            "code_snippet": (
+                "def get_issue(issue_id):\n"
+                "    db = get_db()\n"
+                "    cursor = db.cursor()\n"
+                "    query = 'SELECT * FROM issues WHERE id = ' + issue_id\n"
+                "    cursor.execute(query)\n"
+                "    return cursor.fetchone()\n"
+                "    cursor.close()"
             ),
             "note": "Cần refactor lại câu lệnh SQL để tránh SQL injection.",
         },

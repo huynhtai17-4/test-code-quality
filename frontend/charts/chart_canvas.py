@@ -1,5 +1,7 @@
 """Canvas tích hợp Matplotlib hiển thị các loại biểu đồ trực quan (SKILLS.md)."""
 
+import base64
+import io
 import logging
 import math
 import sys
@@ -110,13 +112,18 @@ class AnalysisChartCanvas(QWidget):
         self.canvas.draw()
 
     def draw_criteria_radar(self, criteria_scores: dict[str, float]) -> None:
-        """Vẽ biểu đồ Radar đa giác 5 tiêu chí đánh giá chất lượng (thang điểm 0–100)."""
+        """Vẽ biểu đồ Radar đa giác 5-6 tiêu chí đánh giá chất lượng (thang điểm 0–100)."""
         self.fig.clear()
         if not criteria_scores:
             self.draw_empty("Chưa có điểm tiêu chí")
             return
 
-        keys = ("complexity", "security", "pylint", "health", "dependency")
+        all_keys = ("complexity", "security", "pylint", "health", "dependency", "malware")
+        if "malware" in criteria_scores:
+            keys = all_keys
+        else:
+            keys = all_keys[:-1]
+
         labels = [TEN_TIEU_CHI.get(k, k) for k in keys]
         raw_vals = [float(criteria_scores.get(k, 0.0)) for k in keys]
 
@@ -139,7 +146,7 @@ class AnalysisChartCanvas(QWidget):
 
         ax.plot(angles, values, color=CHART_ACCENT, linewidth=2, linestyle="solid")
         ax.fill(angles, values, color=CHART_ACCENT, alpha=0.15)
-        ax.set_title("Đa giác 5 tiêu chí kiểm định", pad=14)
+        ax.set_title(f"Đa giác {num_vars} tiêu chí kiểm định", pad=14)
 
         try:
             self.fig.tight_layout()
@@ -191,3 +198,14 @@ class AnalysisChartCanvas(QWidget):
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.error("Lỗi khi lưu biểu đồ ra tệp: %s", exc)
             return False
+
+    def export_base64_png(self) -> str:
+        """Trích xuất ảnh PNG base64 của biểu đồ hiện tại."""
+        try:
+            buf = io.BytesIO()
+            self.fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+            buf.seek(0)
+            return base64.b64encode(buf.read()).decode("utf-8")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.error("Lỗi khi xuất ảnh biểu đồ sang base64: %s", exc)
+            return ""

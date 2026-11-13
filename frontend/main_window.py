@@ -233,6 +233,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         sidebar = QFrame(self)
         sidebar.setObjectName("Sidebar")
         sidebar.setFixedWidth(theme.SIDEBAR_WIDTH)
+        sidebar.resize(theme.SIDEBAR_WIDTH, 750)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(0, 0, 0, 12)

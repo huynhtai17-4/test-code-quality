@@ -65,5 +65,6 @@ INSERT IGNORE INTO scoring_config (metric_key, metric_name, weight, description,
     ('radon_mi', 'Maintainability Index', 25.00, 'Chỉ số khả năng bảo trì mã nguồn từ Radon', TRUE),
     ('radon_cc', 'Cyclomatic Complexity', 15.00, 'Độ phức tạp vòng lặp trung bình từ Radon', TRUE),
     ('bandit', 'Security Analysis (Bandit)', 20.00, 'Điểm an toàn mã nguồn Python từ Bandit', TRUE),
-    ('pip_audit', 'Dependency Audit', 10.00, 'Kiểm tra lỗ hổng thư viện phụ thuộc từ pip-audit', TRUE);
+    ('pip_audit', 'Dependency Audit', 10.00, 'Kiểm tra lỗ hổng thư viện phụ thuộc từ pip-audit', TRUE),
+    ('malware', 'Phát hiện mã độc & AST', 15.00, 'Phát hiện mã độc tĩnh và quét độ hỗn loạn secret qua AST', TRUE);
 

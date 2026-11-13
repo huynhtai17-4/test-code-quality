@@ -16,6 +16,7 @@ from backend.analyzer import (
     aggregator,
     lint_flake8,
     lint_pylint,
+    malware_ast,
     metrics_radon,
     scoring,
     source_loader,
@@ -54,6 +55,8 @@ def _load_weights_from_db() -> dict[str, float]:
         "project_health": "health",
         "health": "health",
         "dependency": "dependency",
+        "malware": "malware",
+        "malware_ast": "malware",
     }
     weights: dict[str, float] = {}
     try:
@@ -77,6 +80,7 @@ def _convert_issues_for_db(raw_issues: list[dict[str, Any]]) -> list[dict[str, A
         "radon": "complexity",
         "pylint": "code_style",
         "flake8": "code_style",
+        "malware_ast": "security",
     }
 
     for item in raw_issues:
@@ -117,6 +121,7 @@ def _run_analyzers(
     dict[str, Any],
     dict[str, Any],
     dict[str, Any],
+    dict[str, Any],
 ]:
     """Thực thi các bộ quét mã nguồn thực tế trên thư mục làm việc."""
     # 1. Radon
@@ -137,16 +142,25 @@ def _run_analyzers(
     # 6. Flake8
     flake8_data = lint_flake8.analyze_flake8(working_dir)
 
-    return radon_data, pylint_data, bandit_data, audit_data, health_data, flake8_data
+    # 7. Malware AST
+    malware_data = malware_ast.analyze_malware(working_dir)
+
+    return radon_data, pylint_data, bandit_data, audit_data, health_data, flake8_data, malware_data
 
 
 def _perform_scan_and_aggregation(
     working_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Chạy quét các bộ công cụ, tổng hợp kết quả và tính điểm."""
-    radon_data, pylint_data, bandit_data, audit_data, health_data, flake8_data = _run_analyzers(
-        working_dir
-    )
+    (
+        radon_data,
+        pylint_data,
+        bandit_data,
+        audit_data,
+        health_data,
+        flake8_data,
+        malware_data,
+    ) = _run_analyzers(working_dir)
 
     aggregated = aggregator.aggregate_analysis_results(
         radon_data=radon_data,
@@ -155,6 +169,8 @@ def _perform_scan_and_aggregation(
         audit_data=audit_data,
         health_data=health_data,
         flake8_data=flake8_data,
+        malware_data=malware_data,
+        working_dir=working_dir,
     )
 
     weights = _load_weights_from_db()
@@ -164,6 +180,7 @@ def _perform_scan_and_aggregation(
         pylint_data=pylint_data,
         health_data=health_data,
         audit_data=audit_data,
+        malware_data=malware_data,
     )
     score_res = scoring.calculate_final_score(criteria_scores, weights)
 
@@ -189,6 +206,8 @@ def _persist_results(
 
     summary_payload = {
         "total_score": total_score,
+        "quality_score": float(score_res.get("quality_score", total_score)),
+        "security_score": float(score_res.get("security_score", total_score)),
         "grade": grade,
         "criteria_scores": criteria,
         "severity_distribution": severity_dist,
@@ -284,6 +303,8 @@ def run_project_analysis(
                 "session_id": session_id,
                 "project_id": project_id,
                 "total_score": float(score_res["total_score"]),
+                "quality_score": float(score_res.get("quality_score", score_res["total_score"])),
+                "security_score": float(score_res.get("security_score", score_res["total_score"])),
                 "grade": str(score_res["grade"]),
                 "criteria_scores": score_res["criteria_scores"],
                 "severity_distribution": aggregated.get("severity_distribution", {}),

@@ -1,19 +1,24 @@
 """Module tính điểm chất lượng mã nguồn và xếp loại sử dụng NumPy."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-CRITERIA_KEYS = ("complexity", "security", "pylint", "health", "dependency")
+CRITERIA_KEYS = ("complexity", "security", "pylint", "health", "dependency", "malware")
+QUALITY_KEYS = ("complexity", "pylint", "health")
+SECURITY_KEYS = ("security", "dependency", "malware")
 
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "complexity": 0.25,
-    "security": 0.25,
-    "pylint": 0.20,
+    "complexity": 0.20,
+    "security": 0.20,
+    "pylint": 0.15,
     "health": 0.15,
     "dependency": 0.15,
+    "malware": 0.15,
 }
 
 PENALTY_COEFFICIENTS = np.array([10.0, 5.0, 2.0, 0.5], dtype=float)
@@ -21,8 +26,7 @@ SEVERITY_ORDER = ("Critical", "High", "Medium", "Low")
 
 
 def calculate_security_score(severity_counts: dict[str, int]) -> float:
-    """
-    Tính điểm bảo mật (0.0 - 100.0) dựa trên vector nhân vô hướng hệ số phạt của NumPy.
+    """Tính điểm bảo mật (0.0 - 100.0) dựa trên vector nhân vô hướng hệ số phạt của NumPy.
 
     Công thức: max(0.0, 100.0 - (10*Critical + 5*High + 2*Medium + 0.5*Low))
     """
@@ -39,9 +43,13 @@ def calculate_dependency_score(dependency_counts: dict[str, int]) -> float:
     return calculate_security_score(dependency_counts)
 
 
+def calculate_malware_score(malware_counts: dict[str, int]) -> float:
+    """Tính điểm phát hiện mã độc AST (0.0 - 100.0) dựa trên trừ lùi hệ số phạt NumPy."""
+    return calculate_security_score(malware_counts)
+
+
 def determine_grade(score: float) -> str:
-    """
-    Xếp loại chất lượng mã nguồn dựa trên thang điểm tổng kết (A, B, C, D, F).
+    """Xếp loại chất lượng mã nguồn dựa trên thang điểm tổng kết (A, B, C, D, F).
 
     A >= 90.0, B >= 75.0, C >= 60.0, D >= 40.0, còn lại F.
     """
@@ -98,36 +106,32 @@ def build_criteria_scores(
     pylint_data: dict[str, Any],
     health_data: dict[str, Any],
     audit_data: dict[str, Any],
+    malware_data: dict[str, Any] | None = None,
 ) -> dict[str, float]:
-    """
-    Chuẩn hóa và tính toán điểm cho 5 tiêu chí thành phần về thang 0 - 100.
+    """Chuẩn hóa và tính toán điểm cho 6 tiêu chí thành phần về thang 0 - 100.
 
     - complexity: Lấy từ avg_maintainability của Radon (MI vốn từ 0-100).
     - security: Trừ lùi từ lỗi Bandit qua calculate_security_score.
     - pylint: Điểm Pylint thang 10 nhân 10.
     - health: Điểm health_score từ module project_health (0-100).
     - dependency: Trừ lùi từ lỗi Pip-audit qua calculate_dependency_score.
+    - malware: Trừ lùi từ lỗi mã độc AST qua calculate_malware_score.
     """
-    complexity_score = _extract_complexity_score(radon_data)
-
-    bandit_counts = _count_issues_by_severity(bandit_data.get("issues", []))
-    security_score = calculate_security_score(bandit_counts)
-
-    pylint_raw = pylint_data.get("score", pylint_data.get("pylint_score", 10.0))
-    pylint_score = float(np.clip(float(pylint_raw) * 10.0, 0.0, 100.0))
-
-    health_raw = health_data.get("health_score", 100.0)
-    health_score = float(np.clip(float(health_raw), 0.0, 100.0))
-
-    audit_counts = _count_issues_by_severity(audit_data.get("issues", []))
-    dependency_score = calculate_dependency_score(audit_counts)
+    pylint_val = float(pylint_data.get("score", pylint_data.get("pylint_score", 10.0)))
+    health_val = float(health_data.get("health_score", 100.0))
+    malware_score = (
+        calculate_malware_score(_count_issues_by_severity(malware_data.get("issues", [])))
+        if malware_data and isinstance(malware_data, dict)
+        else 100.0
+    )
 
     return {
-        "complexity": round(complexity_score, 2),
-        "security": round(security_score, 2),
-        "pylint": round(pylint_score, 2),
-        "health": round(health_score, 2),
-        "dependency": round(dependency_score, 2),
+        "complexity": round(_extract_complexity_score(radon_data), 2),
+        "security": round(calculate_security_score(_count_issues_by_severity(bandit_data.get("issues", []))), 2),
+        "pylint": round(float(np.clip(pylint_val * 10.0, 0.0, 100.0)), 2),
+        "health": round(float(np.clip(health_val, 0.0, 100.0)), 2),
+        "dependency": round(calculate_dependency_score(_count_issues_by_severity(audit_data.get("issues", []))), 2),
+        "malware": round(malware_score, 2),
     }
 
 
@@ -140,8 +144,9 @@ def _prepare_vectors(
     weights_list: list[float] = []
 
     for key in CRITERIA_KEYS:
-        score_val = float(criteria_scores.get(key, 0.0))
-        weight_val = float(weights_dict.get(key, DEFAULT_WEIGHTS.get(key, 0.2)))
+        default_score = 100.0 if key == "malware" else 0.0
+        score_val = float(criteria_scores.get(key, default_score))
+        weight_val = float(weights_dict.get(key, DEFAULT_WEIGHTS.get(key, 0.15)))
         scores_list.append(score_val)
         weights_list.append(max(0.0, weight_val))
 
@@ -157,33 +162,60 @@ def _prepare_vectors(
     return scores_vec, normalized_weights
 
 
+def calculate_quality_score(
+    criteria_scores: dict[str, float],
+    weights_dict: dict[str, float] | None = None,
+) -> float:
+    """Tính điểm chất lượng mã nguồn tổng hợp từ complexity, pylint và health (thang 0-100)."""
+    weights = weights_dict if weights_dict else DEFAULT_WEIGHTS
+    scores = np.array([float(criteria_scores.get(k, 100.0)) for k in QUALITY_KEYS], dtype=float)
+    raw_w = np.array(
+        [max(0.0, float(weights.get(k, DEFAULT_WEIGHTS.get(k, 0.15)))) for k in QUALITY_KEYS],
+        dtype=float,
+    )
+    sum_w = float(np.sum(raw_w))
+    norm_w = raw_w / sum_w if sum_w > 0 else np.ones(len(QUALITY_KEYS), dtype=float) / len(QUALITY_KEYS)
+    return float(np.clip(np.dot(scores, norm_w), 0.0, 100.0))
+
+
+def calculate_security_group_score(
+    criteria_scores: dict[str, float],
+    weights_dict: dict[str, float] | None = None,
+) -> float:
+    """Tính điểm an toàn bảo mật tổng hợp từ security (Bandit), dependency và malware (thang 0-100)."""
+    weights = weights_dict if weights_dict else DEFAULT_WEIGHTS
+    scores = np.array([float(criteria_scores.get(k, 100.0)) for k in SECURITY_KEYS], dtype=float)
+    raw_w = np.array(
+        [max(0.0, float(weights.get(k, DEFAULT_WEIGHTS.get(k, 0.15)))) for k in SECURITY_KEYS],
+        dtype=float,
+    )
+    sum_w = float(np.sum(raw_w))
+    norm_w = raw_w / sum_w if sum_w > 0 else np.ones(len(SECURITY_KEYS), dtype=float) / len(SECURITY_KEYS)
+    return float(np.clip(np.dot(scores, norm_w), 0.0, 100.0))
+
+
 def calculate_final_score(
     criteria_scores: dict[str, float],
     weights_config: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """
-    Tính điểm chất lượng tổng hợp cốt lõi bằng tích vô hướng vector NumPy.
+    """Tính điểm chất lượng tổng hợp cốt lõi và 2 hệ điểm Quality / Security bằng vector NumPy.
 
     Args:
-        criteria_scores: Điểm của 5 tiêu chí (complexity, security, pylint, health, dependency).
-        weights_config: Bảng trọng số tùy chỉnh (tự động fallback về DEFAULT_WEIGHTS nếu rỗng).
+        criteria_scores: Điểm của 6 tiêu chí (complexity, security, pylint, health, dependency, malware).
+        weights_config: Bảng trọng số tùy chỉnh (fallback về DEFAULT_WEIGHTS nếu rỗng).
 
     Returns:
-        dict chứa điểm tổng kết, xếp loại, điểm thành phần và trọng số đã áp dụng:
-        {
-            "total_score": float,
-            "grade": str,
-            "criteria_scores": dict[str, float],
-            "weights_used": dict[str, float]
-        }
+        dict chứa điểm tổng kết, chất lượng, bảo mật, xếp loại, điểm thành phần và trọng số đã dùng.
     """
     raw_weights = weights_config if weights_config else DEFAULT_WEIGHTS
     scores_vec, normalized_weights = _prepare_vectors(criteria_scores, raw_weights)
 
-    # Tính điểm tổng bằng tích vô hướng vector (np.dot)
     total_score = float(np.clip(np.dot(scores_vec, normalized_weights), 0.0, 100.0))
     rounded_total = round(total_score, 2)
     grade = determine_grade(rounded_total)
+
+    quality_score = calculate_quality_score(criteria_scores, raw_weights)
+    security_score = calculate_security_group_score(criteria_scores, raw_weights)
 
     weights_used = {
         key: round(float(normalized_weights[i]), 4)
@@ -197,6 +229,8 @@ def calculate_final_score(
 
     return {
         "total_score": rounded_total,
+        "quality_score": round(quality_score, 2),
+        "security_score": round(security_score, 2),
         "grade": grade,
         "criteria_scores": normalized_criteria,
         "weights_used": weights_used,
@@ -211,31 +245,29 @@ def _run_sample_scoring() -> None:
         sys.path.insert(0, str(root_dir))
 
     from backend.analyzer.dependency_audit import audit_dependencies  # pylint: disable=import-outside-toplevel
+    from backend.analyzer.malware_ast import analyze_malware  # pylint: disable=import-outside-toplevel
     from backend.analyzer.project_health import analyze_project_health  # pylint: disable=import-outside-toplevel
     from backend.analyzer.security_bandit import analyze_bandit  # pylint: disable=import-outside-toplevel
 
     sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
     print(f"[*] Thu thập dữ liệu phân tích từ: {sample_dir}")
 
-    bandit_res = analyze_bandit(sample_dir)
-    audit_res = audit_dependencies(sample_dir)
-    health_res = analyze_project_health(sample_dir)
-    radon_res = {"status": "ok", "avg_maintainability": 65.0}
-    pylint_res = {"status": "ok", "score": 7.2}
-
     criteria = build_criteria_scores(
-        radon_data=radon_res,
-        bandit_data=bandit_res,
-        pylint_data=pylint_res,
-        health_data=health_res,
-        audit_data=audit_res,
+        radon_data={"status": "ok", "avg_maintainability": 65.0},
+        bandit_data=analyze_bandit(sample_dir),
+        pylint_data={"status": "ok", "score": 7.2},
+        health_data=analyze_project_health(sample_dir),
+        audit_data=audit_dependencies(sample_dir),
+        malware_data=analyze_malware(sample_dir),
     )
 
     result = calculate_final_score(criteria)
 
     print("\n========== KẾT QUẢ CHẤM ĐIỂM TỔNG KẾT (NUMPY) ==========")
-    print(f"Điểm tổng kết : {result['total_score']} / 100")
-    print(f"Xếp loại      : Hạng {result['grade']}")
+    print(f"Điểm tổng kết  : {result['total_score']} / 100")
+    print(f"Chất lượng code: {result['quality_score']} / 100")
+    print(f"An toàn bảo mật: {result['security_score']} / 100")
+    print(f"Xếp loại       : Hạng {result['grade']}")
     print("\nĐiểm thành phần (Criteria Scores):")
     for k, v in result["criteria_scores"].items():
         print(f"  - {k:<12}: {v:>6.2f} / 100")
