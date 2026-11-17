@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from frontend import config
-from frontend.network import api
+from frontend.controllers.settings_controller import SettingsController
 from frontend.views.theme import (
     BORDER_SOFT,
     GRADE_A,
@@ -38,7 +38,6 @@ from frontend.views.theme import (
 )
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
-from frontend.workers.request_worker import RequestWorker
 
 _CRITERIA_KEYS = ("complexity", "security", "pylint", "health", "dependency")
 
@@ -162,7 +161,11 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._active_worker: RequestWorker | None = None
+        self._controller = SettingsController(self)
+        self._controller.ping_result.connect(self._on_ping_result)
+        self._controller.configs_loaded.connect(self._on_configs_loaded)
+        self._controller.configs_saved.connect(self._on_configs_saved)
+        self._controller.status_message.connect(self.status_message.emit)
 
         self.ip_edit = QLineEdit(config.SERVER_HOST)
         self.port_spin = QSpinBox()
@@ -351,38 +354,21 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.btn_save.setEnabled(False)
 
     def _on_ping_clicked(self) -> None:
-        """Thực hiện kiểm tra kết nối mạng tới Socket Server qua RequestWorker."""
+        """Thực hiện kiểm tra kết nối mạng tới Socket Server qua Controller."""
         host = self.ip_edit.text().strip() or config.SERVER_HOST
         port = self.port_spin.value()
 
         self.btn_ping.setEnabled(False)
         self.lbl_ping_result.setText("Đang kiểm tra kết nối...")
         self.lbl_ping_result.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        self._controller.ping_server(host, port)
 
-        def _do_ping() -> dict[str, Any]:
-            is_ok = api.ping_server(host=host, port=port, timeout=3.0)
-            return {"status": "ok" if is_ok else "error"}
-
-        worker = RequestWorker(_do_ping, parent=self)
-        self._active_worker = worker
-
-        def _on_finished(_res: dict[str, Any]) -> None:
-            self.btn_ping.setEnabled(True)
-            self.lbl_ping_result.setText("● Kết nối thành công tới máy chủ")
-            self.lbl_ping_result.setStyleSheet(f"color: {GRADE_A}; font-size: 13px;")
-            self.status_message.emit("Kết nối máy chủ Backend thành công.")
-
-        def _on_failed(_err: str) -> None:
-            self.btn_ping.setEnabled(True)
-            self.lbl_ping_result.setText(
-                "● Không thể kết nối tới máy chủ (kiểm tra lại cổng và tiến trình Backend)"
-            )
-            self.lbl_ping_result.setStyleSheet(f"color: {GRADE_F}; font-size: 13px;")
-            self.status_message.emit("Không thể kết nối tới máy chủ.")
-
-        worker.finished.connect(_on_finished)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_ping_result(self, is_ok: bool, message: str) -> None:
+        """Cập nhật giao diện kết quả kiểm tra kết nối."""
+        self.btn_ping.setEnabled(True)
+        self.lbl_ping_result.setText(message)
+        color = GRADE_A if is_ok else GRADE_F
+        self.lbl_ping_result.setStyleSheet(f"color: {color}; font-size: 13px;")
 
     def _on_reset_clicked(self) -> None:
         """Khôi phục các ô trọng số về giá trị mặc định chuẩn."""
@@ -392,50 +378,30 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.status_message.emit("Đã khôi phục trọng số về giá trị mặc định.")
 
     def _on_save_clicked(self) -> None:
-        """Lưu các giá trị trọng số vào cơ sở dữ liệu qua RequestWorker."""
+        """Lưu các giá trị trọng số vào cơ sở dữ liệu qua Controller."""
         weights_dict = {key: spin.value() for key, spin in self.weight_spins.items()}
-
         self.btn_save.setEnabled(False)
-        worker = RequestWorker(api.update_config, weights_dict, parent=self)
-        self._active_worker = worker
+        self._controller.save_configs(weights_dict)
 
-        def _on_finished(_res: dict[str, Any]) -> None:
-            self.btn_save.setEnabled(True)
-            self.status_message.emit("Đã lưu cấu hình trọng số thành công.")
-
-        def _on_failed(err_msg: str) -> None:
-            self.btn_save.setEnabled(True)
-            self.status_message.emit(f"Lỗi khi lưu cấu hình trọng số: {err_msg}")
-
-        worker.finished.connect(_on_finished)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_configs_saved(self, _success: bool, _message: str) -> None:
+        """Khôi phục trạng thái nút lưu sau khi Controller xử lý xong."""
+        self.btn_save.setEnabled(True)
 
     def load_current_configs(self) -> None:
-        """Tải cấu hình trọng số thực tế từ backend và cập nhật các ô nhập liệu."""
-        worker = RequestWorker(api.get_config, parent=self)
-        self._active_worker = worker
+        """Kích hoạt Controller tải cấu hình trọng số từ backend."""
+        self._controller.load_current_configs()
 
-        def _on_loaded(res: dict[str, Any]) -> None:
-            configs = res.get("data")
-            if isinstance(configs, list):
-                for item in configs:
-                    raw_key = str(item.get("metric_key") or "").strip().lower()
-                    target_key = _BACKEND_KEY_MAP.get(raw_key, raw_key)
-                    raw_val = item.get("weight")
-                    if target_key in self.weight_spins and raw_val is not None:
-                        val = float(raw_val)
-                        if val > 1.0:
-                            val /= 100.0
-                        self.weight_spins[target_key].setValue(val)
-                self.status_message.emit("Đã nạp cấu hình trọng số từ máy chủ.")
-
-        def _on_failed(_err: str) -> None:
-            self.status_message.emit("Không thể đọc cấu hình trọng số từ máy chủ.")
-
-        worker.finished.connect(_on_loaded)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_configs_loaded(self, configs: list[dict[str, Any]]) -> None:
+        """Cập nhật các ô nhập liệu theo dữ liệu từ Controller."""
+        for item in configs:
+            raw_key = str(item.get("metric_key") or "").strip().lower()
+            target_key = _BACKEND_KEY_MAP.get(raw_key, raw_key)
+            raw_val = item.get("weight")
+            if target_key in self.weight_spins and raw_val is not None:
+                val = float(raw_val)
+                if val > 1.0:
+                    val /= 100.0
+                self.weight_spins[target_key].setValue(val)
 
     def get_weights(self) -> dict[str, float]:
         """Lấy từ điển trọng số hiện tại của 5 tiêu chí."""
@@ -445,4 +411,4 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Thiết lập trọng số thủ công cho các tiêu chí."""
         for key, val in weights.items():
             if key in self.weight_spins:
-                self.weight_spins[key].setValue(float(val))
+                self.weight_spins[key].setValue(val)

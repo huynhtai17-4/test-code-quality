@@ -50,7 +50,7 @@ from frontend.models.issue_model import (
     _prepare_snippet_lines,
     _TOOL_DISPLAY_MAP,
 )
-from frontend.network import api
+from frontend.controllers.issue_controller import IssueController
 from frontend.views.dialogs.manual_issue_dialog import ManualIssueDialog
 from frontend.views.theme import (
     BORDER,
@@ -68,7 +68,6 @@ from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.table_utils import chuan_hoa_bang
-from frontend.workers.request_worker import RequestWorker
 
 
 class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -86,8 +85,14 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self._session_id: int | None = None
         self._selected_issue: dict[str, Any] | None = None
-        self._active_worker: RequestWorker | None = None
-        self._active_workers: list[RequestWorker] = []
+
+        self._controller = IssueController(self)
+        self._controller.issues_loaded.connect(self._on_issues_loaded)
+        self._controller.issue_updated.connect(self._on_issue_updated)
+        self._controller.issues_deleted.connect(self._on_issues_deleted)
+        self._controller.issue_created.connect(self._on_issue_created)
+        self._controller.error_occurred.connect(self._on_issue_error)
+        self._controller.status_message.connect(self.status_message.emit)
 
         self._table_model = IssueTableModel()
         self._proxy_model = IssueFilterProxyModel(self)
@@ -524,40 +529,26 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self._execute_update_issue(int(issue_id), new_status, new_note)
 
     def _execute_update_issue(self, issue_id: int, status: str, note: str | None) -> None:
-        """Gửi yêu cầu cập nhật lỗi qua RequestWorker."""
+        """Gửi yêu cầu cập nhật lỗi qua Controller."""
         self.btn_save_note.setEnabled(False)
+        self._controller.update_issue(issue_id, status, note)
 
-        worker = RequestWorker(api.update_issue_status, issue_id, status, note, parent=self)
-        self._active_workers.append(worker)
-        self._active_worker = worker
+    def _on_issue_updated(self, issue_id: int, status: str, note: str | None) -> None:
+        """Xử lý giao diện khi cập nhật thông tin lỗi thành công."""
+        self.btn_save_note.setEnabled(True)
+        self._table_model.update_issue_fields(issue_id, status, note)
+        if self._selected_issue:
+            self._selected_issue["status"] = status
+            self._selected_issue["note"] = note
+        self.issue_updated.emit(issue_id)
 
-        def _cleanup() -> None:
-            if worker in self._active_workers:
-                self._active_workers.remove(worker)
-            if not self._active_workers:
-                self.btn_save_note.setEnabled(True)
-                self._active_worker = None
-
-        def _on_finished(_res: dict[str, Any]) -> None:
-            _cleanup()
-            self._table_model.update_issue_fields(issue_id, status, note)
-            if self._selected_issue:
-                self._selected_issue["status"] = status
-                self._selected_issue["note"] = note
-            self.status_message.emit("Đã cập nhật trạng thái lỗi thành công.")
-            self.issue_updated.emit(issue_id)
-
-        def _on_failed(err_msg: str) -> None:
-            _cleanup()
-            self.inline_notice.show_notice(
-                f"Lỗi khi cập nhật trạng thái: {err_msg}",
-                notice_type="error",
-            )
-            self.status_message.emit("Cập nhật lỗi thất bại.")
-
-        worker.finished.connect(_on_finished)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_issue_error(self, err_msg: str) -> None:
+        """Hiển thị thông báo lỗi trên giao diện."""
+        self.btn_save_note.setEnabled(True)
+        self.inline_notice.show_notice(
+            f"Lỗi thao tác: {err_msg}",
+            notice_type="error",
+        )
 
     def _on_table_context_menu(self, pos: Any) -> None:
         """Hiển thị menu ngữ cảnh chuột phải trên bảng dữ liệu."""
@@ -586,27 +577,31 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         menu.exec(global_pos)
 
     def _batch_update_status(self, new_status: str) -> None:
-        """Cập nhật trạng thái hàng loạt cho các dòng đang chọn."""
+        """Cập nhật trạng thái hàng loạt cho các dòng đang chọn qua Controller."""
         selected_rows = self.table_view.selectionModel().selectedRows()
         if not selected_rows:
             return
 
+        api_issue_ids: list[int] = []
         for proxy_index in selected_rows:
             source_index = self._proxy_model.mapToSource(proxy_index)
             issue = self._table_model.data(source_index, Qt.ItemDataRole.UserRole)
             if isinstance(issue, dict):
                 issue_id = issue.get("id") or issue.get("issue_id")
                 if issue_id is not None and self._session_id is not None:
-                    self._execute_update_issue(int(issue_id), new_status, issue.get("note"))
+                    api_issue_ids.append(int(issue_id))
                 else:
                     issue["status"] = new_status
                     target_id = int(issue_id) if issue_id is not None else 0
                     self._table_model.update_issue_fields(target_id, new_status)
 
-        self.status_message.emit(f"Đã cập nhật trạng thái cho {len(selected_rows)} lỗi.")
+        if api_issue_ids:
+            self._controller.batch_update_status(api_issue_ids, new_status)
+        else:
+            self.status_message.emit(f"Đã cập nhật trạng thái cho {len(selected_rows)} lỗi.")
 
     def _on_delete_selected_issues(self) -> None:
-        """Xác nhận và xóa các lỗi đang được chọn."""
+        """Xác nhận và xóa các lỗi đang được chọn qua Controller."""
         selected_rows = self.table_view.selectionModel().selectedRows()
         if not selected_rows:
             return
@@ -623,7 +618,6 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
 
         target_ids: list[int] = []
-        api_issue_ids: list[int] = []
         for proxy_index in reversed(selected_rows):
             issue = self._table_model.data(
                 self._proxy_model.mapToSource(proxy_index), Qt.ItemDataRole.UserRole
@@ -632,8 +626,6 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
                 raw_id = issue.get("id") or issue.get("issue_id")
                 if raw_id is not None:
                     target_ids.append(int(raw_id))
-                    if self._session_id is not None:
-                        api_issue_ids.append(int(raw_id))
                 else:
                     target_ids.append(0)
 
@@ -642,84 +634,28 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         self._update_table_stack()
 
-        if api_issue_ids:
-            def _delete_job() -> dict[str, Any]:
-                for iid in api_issue_ids:
-                    api.delete_issue(iid)
-                return {"status": "ok", "deleted_count": len(api_issue_ids)}
-
-            worker = RequestWorker(_delete_job, parent=self)
-            self._active_workers.append(worker)
-            self._active_worker = worker
-
-            def _on_done(_res: dict[str, Any] | None = None) -> None:
-                if worker in self._active_workers:
-                    self._active_workers.remove(worker)
-                if not self._active_workers:
-                    self._active_worker = None
-                self.status_message.emit(
-                    f"Đã xóa thành công {len(selected_rows)} lỗi khỏi phiên quét."
-                )
-
-            def _on_error(err_msg: str) -> None:
-                if worker in self._active_workers:
-                    self._active_workers.remove(worker)
-                if not self._active_workers:
-                    self._active_worker = None
-                self.inline_notice.show_notice(
-                    f"Lỗi khi xóa lỗi trên máy chủ: {err_msg}",
-                    notice_type="error",
-                )
-                self.status_message.emit("Xóa lỗi thất bại.")
-
-            worker.finished.connect(_on_done)
-            worker.failed.connect(_on_error)
-            worker.start()
+        if self._session_id is not None and target_ids:
+            self._controller.delete_issues(target_ids)
         else:
             self.status_message.emit(
                 f"Đã xóa thành công {len(selected_rows)} lỗi khỏi phiên quét."
             )
 
+    def _on_issues_deleted(self, deleted_ids: list[int]) -> None:
+        """Cập nhật giao diện sau khi Controller hoàn tất xóa lỗi."""
+        for did in deleted_ids:
+            self._table_model.remove_issue(did)
+        self._update_table_stack()
+
     def _on_add_issue_clicked(self) -> None:
-        """Mở hộp thoại thêm lỗi thủ công và lưu vào CSDL."""
+        """Mở hộp thoại thêm lỗi thủ công và lưu vào CSDL qua Controller."""
         dialog = ManualIssueDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         issue_data = dialog.get_issue_data()
-
         if self._session_id is not None:
-            worker = RequestWorker(
-                api.create_manual_issue,
-                self._session_id,
-                issue_data["file_path"],
-                issue_data["line_number"],
-                issue_data["severity"],
-                issue_data["message"],
-                issue_data.get("note"),
-                parent=self,
-            )
-            self._active_worker = worker
-
-            def _on_created(res: dict[str, Any]) -> None:
-                new_id = res.get("data", {}).get("issue_id", 0)
-                issue_data["id"] = new_id
-                current_list = self._table_model.get_issues()
-                current_list.insert(0, issue_data)
-                self._table_model.set_issues(current_list)
-                self._update_table_stack()
-                self.status_message.emit("Đã thêm lỗi thủ công thành công.")
-                self.issue_updated.emit(new_id)
-
-            def _on_failed(err_msg: str) -> None:
-                self.inline_notice.show_notice(
-                    f"Không thể lưu lỗi thủ công: {err_msg}",
-                    notice_type="error",
-                )
-
-            worker.finished.connect(_on_created)
-            worker.failed.connect(_on_failed)
-            worker.start()
+            self._controller.create_manual_issue(self._session_id, issue_data)
         else:
             issue_data["id"] = 999
             current_list = self._table_model.get_issues()
@@ -728,33 +664,21 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
             self._update_table_stack()
             self.status_message.emit("Đã thêm lỗi thủ công (chế độ độc lập).")
 
+    def _on_issue_created(self, issue_data: dict[str, Any]) -> None:
+        """Cập nhật danh sách lỗi trên bảng sau khi tạo thành công."""
+        new_id = issue_data.get("id") or issue_data.get("issue_id", 0)
+        self.issue_updated.emit(int(new_id))
+
     def load_session_issues(self, session_id: int) -> None:
-        """Tải danh sách lỗi thuộc một phiên phân tích từ Backend qua RequestWorker."""
+        """Kích hoạt Controller nạp danh sách lỗi của phiên phân tích."""
         self._session_id = session_id
         self.inline_notice.setVisible(False)
+        self._controller.load_session_issues(session_id)
 
-        worker = RequestWorker(api.list_issues, session_id, parent=self)
-        self._active_worker = worker
-
-        def _on_loaded(res: dict[str, Any]) -> None:
-            issues = res.get("data")
-            if isinstance(issues, list):
-                self._table_model.set_issues(issues)
-                self._update_table_stack()
-                self.status_message.emit(f"Đã tải {len(issues)} lỗi phát hiện.")
-
-        def _on_failed(err_msg: str) -> None:
-            self.inline_notice.show_notice(
-                f"Lỗi khi tải danh sách lỗi: {err_msg}",
-                notice_type="error",
-                action_text="Thử lại",
-            )
-            self.inline_notice.retry_clicked.connect(lambda: self.load_session_issues(session_id))
-            self.status_message.emit("Không thể tải danh sách lỗi.")
-
-        worker.finished.connect(_on_loaded)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_issues_loaded(self, issues: list[dict[str, Any]], _session_id: int) -> None:
+        """Cập nhật dữ liệu lỗi vào bảng khi nạp thành công từ Controller."""
+        self._table_model.set_issues(issues)
+        self._update_table_stack()
 
     def set_issues(self, issues: list[dict[str, Any]], session_id: int | None = None) -> None:
         """Nạp trực tiếp danh sách lỗi vào màn hình."""

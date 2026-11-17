@@ -30,7 +30,7 @@ from frontend.models.project_model import (
     ProjectFilterProxyModel,
     ProjectTableModel,
 )
-from frontend.network import api
+from frontend.controllers.project_controller import ProjectController
 from frontend.views.dialogs.project_dialog import ProjectDialog
 from frontend.views.theme import TEXT_MUTED
 from frontend.views.widgets.empty_state import EmptyState
@@ -38,7 +38,6 @@ from frontend.views.widgets.inline_notice import InlineNotice
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.table_utils import chuan_hoa_bang
-from frontend.workers.request_worker import RequestWorker
 
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -50,7 +49,10 @@ class ProjectsView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._active_worker: RequestWorker | None = None
+        self._controller = ProjectController(self)
+        self._controller.projects_loaded.connect(self._on_projects_loaded)
+        self._controller.error_occurred.connect(self._on_projects_failed)
+        self._controller.status_message.connect(self.status_message.emit)
 
         self._table_model = ProjectTableModel([], self)
         self._proxy_model = ProjectFilterProxyModel(self)
@@ -233,20 +235,13 @@ class ProjectsView(QWidget):
             self._btn_delete.setEnabled(has_sel)
 
     def load_projects(self) -> None:
-        """Gọi API nạp danh sách dự án bất đồng bộ bằng RequestWorker."""
-        self.status_message.emit("Đang tải danh sách dự án...")
-        self._active_worker = RequestWorker(api.list_projects)
-        self._active_worker.finished.connect(self._on_projects_loaded)
-        self._active_worker.failed.connect(self._on_projects_failed)
-        self._active_worker.start()
+        """Kích hoạt Controller nạp danh sách dự án từ máy chủ."""
+        self._controller.load_projects()
 
-    def _on_projects_loaded(self, response: dict[str, Any]) -> None:
-        """Xử lý khi nạp dữ liệu từ máy chủ thành công."""
+    def _on_projects_loaded(self, projects: list[dict[str, Any]]) -> None:
+        """Xử lý cập nhật giao diện khi dữ liệu dự án tải về thành công."""
         if self._notice:
             self._notice.hide()
-        projects = response.get("data", [])
-        if not isinstance(projects, list):
-            projects = []
 
         self._table_model.set_projects(projects)
         if self._lbl_count:
@@ -255,13 +250,11 @@ class ProjectsView(QWidget):
         if self._stack_layout:
             if projects:
                 self._stack_layout.setCurrentIndex(0)
-                self.status_message.emit(f"Đã tải {len(projects)} dự án.")
             else:
                 self._stack_layout.setCurrentIndex(1)
-                self.status_message.emit("Chưa có dự án nào.")
 
     def _on_projects_failed(self, error_msg: str) -> None:
-        """Hiển thị thông báo lỗi khi không thể giao tiếp với Socket Backend."""
+        """Hiển thị thông báo lỗi trên giao diện khi gọi API thất bại."""
         if self._notice:
             self._notice.set_notice(
                 f"Không thể kết nối máy chủ: {error_msg}",
@@ -269,32 +262,16 @@ class ProjectsView(QWidget):
                 "Thử lại",
             )
             self._notice.show()
-        self.status_message.emit("Lỗi kết nối máy chủ.")
 
     def _on_add_project(self) -> None:
-        """Mở hộp thoại thêm mới dự án."""
+        """Hiển thị hộp thoại thêm mới và gửi dữ liệu tới Controller."""
         dialog = ProjectDialog(parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
-            self.status_message.emit(f"Đang thêm dự án '{data['name']}'...")
-            worker = RequestWorker(
-                api.create_project,
-                name=data["name"],
-                path=data["path"],
-                desc=data["description"],
-                source_type=data["source_type"],
-            )
-            worker.finished.connect(lambda _res: self.load_projects())
-            worker.failed.connect(
-                lambda err: self._notice and self._notice.set_notice(
-                    f"Lỗi thêm dự án: {err}", "error"
-                )
-            )
-            self._active_worker = worker
-            worker.start()
+            self._controller.create_project(data)
 
     def _on_edit_project(self) -> None:
-        """Mở hộp thoại chỉnh sửa thông tin dự án đang chọn."""
+        """Hiển thị hộp thoại chỉnh sửa và gửi dữ liệu tới Controller."""
         proj = self._get_selected_project()
         if not proj:
             return
@@ -302,27 +279,10 @@ class ProjectsView(QWidget):
         dialog = ProjectDialog(project=proj, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             data = dialog.get_data()
-            proj_id = int(proj["id"])
-            self.status_message.emit(f"Đang cập nhật dự án '{data['name']}'...")
-            worker = RequestWorker(
-                api.update_project,
-                project_id=proj_id,
-                name=data["name"],
-                path=data["path"],
-                description=data["description"],
-                source_type=data["source_type"],
-            )
-            worker.finished.connect(lambda _res: self.load_projects())
-            worker.failed.connect(
-                lambda err: self._notice and self._notice.set_notice(
-                    f"Lỗi cập nhật: {err}", "error"
-                )
-            )
-            self._active_worker = worker
-            worker.start()
+            self._controller.update_project(int(proj["id"]), data)
 
     def _on_delete_project(self) -> None:
-        """Xác nhận và xóa dự án cùng toàn bộ dữ liệu phân tích."""
+        """Hiển thị xác nhận xóa và yêu cầu Controller thực hiện xóa dự án."""
         proj = self._get_selected_project()
         if not proj:
             return
@@ -344,16 +304,7 @@ class ProjectsView(QWidget):
 
         confirm.exec()
         if confirm.clickedButton() == btn_delete:
-            self.status_message.emit(f"Đang xóa dự án '{proj_name}'...")
-            worker = RequestWorker(api.delete_project, project_id=proj_id)
-            worker.finished.connect(lambda _res: self.load_projects())
-            worker.failed.connect(
-                lambda err: self._notice and self._notice.set_notice(
-                    f"Lỗi xóa dự án: {err}", "error"
-                )
-            )
-            self._active_worker = worker
-            worker.start()
+            self._controller.delete_project(proj_id, proj_name)
 
     def _on_analyze_project(self) -> None:
         """Kích hoạt hành động chuyển tab phân tích cho dự án đang chọn."""

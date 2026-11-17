@@ -38,7 +38,7 @@ from frontend.models.history_model import (
     HistoryTableModel,
     _format_short_date,
 )
-from frontend.network import api
+from frontend.controllers.history_controller import HistoryController
 from frontend.views.dialogs.comparison_dialog import ComparisonDialog
 from frontend.views.theme import (
     SURFACE,
@@ -50,7 +50,6 @@ from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.table_utils import chuan_hoa_bang
-from frontend.workers.request_worker import RequestWorker
 
 
 def _extract_trend_data(
@@ -164,7 +163,11 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._project_id: int | None = None
-        self._active_worker: RequestWorker | None = None
+        self._controller = HistoryController(self)
+        self._controller.history_loaded.connect(self._on_history_loaded)
+        self._controller.session_deleted.connect(self._on_session_deleted)
+        self._controller.error_occurred.connect(self._on_history_error)
+        self._controller.status_message.connect(self.status_message.emit)
 
         self._table_model = HistoryTableModel()
         self.table_view = QTableView()
@@ -320,7 +323,7 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.status_message.emit(f"Chuyển đến danh sách lỗi của phiên #{sid}.")
 
     def _on_delete_clicked(self) -> None:
-        """Xác nhận và xóa một hoặc nhiều phiên quét khỏi cơ sở dữ liệu."""
+        """Xác nhận và xóa một hoặc nhiều phiên quét khỏi cơ sở dữ liệu qua Controller."""
         selected_indexes = self.table_view.selectionModel().selectedRows()
         if not selected_indexes:
             return
@@ -345,30 +348,14 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         for sid in deleted_ids:
             self._table_model.remove_session(sid)
+            self._controller.delete_session(sid)
 
         self._update_view_state()
 
-        if self._project_id is not None and deleted_ids:
-            def _delete_job() -> dict[str, Any]:
-                for sid in deleted_ids:
-                    api.delete_history(sid)
-                return {"status": "ok", "deleted_count": len(deleted_ids)}
-
-            worker = RequestWorker(_delete_job, parent=self)
-            self._active_worker = worker
-            worker.finished.connect(
-                lambda: self.status_message.emit(
-                    f"Đã xóa thành công {len(deleted_ids)} phiên quét."
-                )
-            )
-            worker.failed.connect(
-                lambda err: self.status_message.emit(
-                    f"Lỗi khi xóa phiên quét trên máy chủ: {err}"
-                )
-            )
-            worker.start()
-        else:
-            self.status_message.emit(f"Đã xóa thành công {len(deleted_ids)} phiên quét.")
+    def _on_session_deleted(self, session_id: int) -> None:
+        """Cập nhật giao diện sau khi một phiên bị xóa."""
+        self._table_model.remove_session(session_id)
+        self._update_view_state()
 
     def _update_view_state(self) -> None:
         """Cập nhật biểu đồ, nhãn số lượng và trạng thái rỗng."""
@@ -391,36 +378,29 @@ class HistoryView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.trend_canvas.draw_trend(sessions)
 
     def load_project_history(self, project_id: int) -> None:
-        """Tải lịch sử quét của dự án từ backend qua RequestWorker."""
+        """Kích hoạt Controller nạp lịch sử quét của dự án từ backend."""
         self._project_id = project_id
         self.inline_notice.setVisible(False)
+        self._controller.load_project_history(project_id)
 
-        worker = RequestWorker(api.list_history, project_id, parent=self)
-        self._active_worker = worker
+    def _on_history_loaded(self, sessions: list[dict[str, Any]], _project_id: int) -> None:
+        """Cập nhật danh sách phiên quét và biểu đồ khi nạp thành công từ Controller."""
+        self._table_model.set_sessions(sessions)
+        self._update_view_state()
 
-        def _on_loaded(res: dict[str, Any]) -> None:
-            sessions = res.get("data")
-            if isinstance(sessions, list):
-                self._table_model.set_sessions(sessions)
-                self._update_view_state()
-                self.status_message.emit(f"Đã tải {len(sessions)} phiên quét trong lịch sử.")
-
-        def _on_failed(err_msg: str) -> None:
-            self.inline_notice.show_notice(
-                f"Lỗi khi tải lịch sử quét: {err_msg}",
-                notice_type="error",
-                action_text="Thử lại",
-            )
-            try:
-                self.inline_notice.retry_clicked.disconnect()
-            except (TypeError, RuntimeError):
-                pass
-            self.inline_notice.retry_clicked.connect(lambda: self.load_project_history(project_id))
-            self.status_message.emit("Không thể tải lịch sử phiên quét.")
-
-        worker.finished.connect(_on_loaded)
-        worker.failed.connect(_on_failed)
-        worker.start()
+    def _on_history_error(self, err_msg: str) -> None:
+        """Hiển thị thông báo lỗi khi không thể nạp lịch sử."""
+        self.inline_notice.show_notice(
+            f"Lỗi khi tải lịch sử quét: {err_msg}",
+            notice_type="error",
+            action_text="Thử lại",
+        )
+        try:
+            self.inline_notice.retry_clicked.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        if self._project_id is not None:
+            self.inline_notice.retry_clicked.connect(lambda: self.load_project_history(self._project_id))
 
     def set_sessions(self, sessions: list[dict[str, Any]], project_id: int | None = None) -> None:
         """Nạp trực tiếp danh sách phiên quét vào màn hình (hỗ trợ kiểm thử/chạy độc lập)."""

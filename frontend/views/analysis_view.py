@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
 
 from frontend.charts.chart_canvas import AnalysisChartCanvas
 from frontend.models.file_summary_model import FileSummaryTableModel
-from frontend.network import api
+from frontend.controllers.analysis_controller import AnalysisController
 from frontend.reports.report_generator import (
     _build_html_report_content,
     _compute_dual_scores,
@@ -59,7 +59,6 @@ from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.score_bar import ScoreBar
 from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.table_utils import chuan_hoa_bang
-from frontend.workers.analysis_worker import AnalysisWorker
 
 
 # pylint: disable=too-many-instance-attributes,too-few-public-methods
@@ -74,7 +73,12 @@ class AnalysisView(QWidget):
         self._project_id: int | None = None
         self._project_name: str = "Chưa chọn dự án"
         self._session_id: int | None = None
-        self._worker: AnalysisWorker | None = None
+        self._controller = AnalysisController(self)
+        self._controller.analysis_progress.connect(self._on_analysis_progress)
+        self._controller.analysis_finished.connect(self._on_analysis_finished)
+        self._controller.analysis_failed.connect(self._on_analysis_failed)
+        self._controller.status_message.connect(self.status_message.emit)
+        self._controller.error_occurred.connect(self._on_analysis_failed)
 
         self._lbl_title: QLabel | None = None
         self._lbl_meta: QLabel | None = None
@@ -649,18 +653,11 @@ class AnalysisView(QWidget):
             self._lbl_scanning_step.setText("Khởi tạo kết nối tới máy chủ phân tích...")
 
         self.status_message.emit(f"Bắt đầu phân tích dự án '{self._project_name}'...")
-
-        self._worker = AnalysisWorker(self._project_id, self)
-        self._worker.progress.connect(self._on_analysis_progress)
-        self._worker.finished.connect(self._on_analysis_finished)
-        self._worker.failed.connect(self._on_analysis_failed)
-        self._worker.start()
+        self._controller.start_analysis(self._project_id)
 
     def _cancel_scan(self) -> None:
         """Hủy tiến trình phân tích theo lệnh người dùng."""
-        if self._worker:
-            self._worker.cancel()
-            self.status_message.emit("Đã gửi lệnh hủy phân tích...")
+        self._controller.cancel_analysis()
 
     def _on_analysis_progress(self, msg: str, pct: int) -> None:
         """Cập nhật giao diện theo từng bước phân tích."""
@@ -720,32 +717,11 @@ class AnalysisView(QWidget):
             return
 
         html_content = self.generate_html_report()
-        try:
-            with open(file_path, "w", encoding="utf-8") as f_out:
-                f_out.write(html_content)
-            self.status_message.emit(f"Đã xuất báo cáo HTML thành công: {file_path}")
-        except OSError as exc:
-            logger.error("Lỗi khi ghi tệp báo cáo HTML: %s", exc)
-            self.status_message.emit(f"Xuất báo cáo thất bại: {exc}")
+        self._controller.save_report_file(file_path, html_content)
 
     def _collect_critical_high_issues(self, data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Lọc và trả về danh sách lỗi Critical / High từ dữ liệu hoặc API."""
-        raw_issues = data.get("issues")
-        if not raw_issues and self._session_id:
-            try:
-                res = api.list_issues(int(self._session_id))
-                if isinstance(res, dict) and res.get("status") == "ok":
-                    raw_issues = res.get("data", [])
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.debug("Không thể lấy danh sách issues từ API: %s", exc)
-
-        crit_high: list[dict[str, Any]] = []
-        if isinstance(raw_issues, list):
-            for it in raw_issues:
-                sev = str(it.get("severity") or "").capitalize()
-                if sev in ("Critical", "High"):
-                    crit_high.append(it)
-        return crit_high
+        """Lọc và trả về danh sách lỗi Critical / High từ dữ liệu hoặc Controller."""
+        return self._controller.collect_critical_high_issues(self._session_id, data)
 
     def generate_html_report(self) -> str:
         """Tạo mã nguồn HTML báo cáo kỹ thuật độc lập hỗ trợ in ấn (Ctrl+P xuất PDF)."""
