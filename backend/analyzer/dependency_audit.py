@@ -205,10 +205,3 @@ def audit_dependencies(
             "total_issues": 0,
             "issues": [],
         }
-
-
-if __name__ == "__main__":
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang thực hiện kiểm tra CVE phụ thuộc vào: {sample_dir}")
-    audit_result = audit_dependencies(sample_dir)
-    print(json.dumps(audit_result, indent=2, ensure_ascii=False))

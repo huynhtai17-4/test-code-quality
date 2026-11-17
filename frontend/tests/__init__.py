@@ -1,1 +1,0 @@
-"""Frontend tests package initialization."""

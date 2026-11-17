@@ -122,10 +122,3 @@ def analyze_bandit(
             "total_issues": 0,
             "issues": [],
         }
-
-
-if __name__ == "__main__":
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang thực hiện quét thử nghiệm Bandit vào: {sample_dir}")
-    scan_result = analyze_bandit(sample_dir)
-    print(json.dumps(scan_result, indent=2, ensure_ascii=False))

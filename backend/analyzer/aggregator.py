@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -211,49 +210,3 @@ def aggregate_analysis_results(
         "file_summary": file_summary,
         "top_risk_files": top_risk_files,
     }
-
-
-def _run_sample_aggregation() -> None:
-    """Hàm phụ trợ cho khối __main__ để thực thi quét thử và in kết quả."""
-    import sys  # pylint: disable=import-outside-toplevel
-    root_dir = Path(__file__).resolve().parents[2]
-    if str(root_dir) not in sys.path:
-        sys.path.insert(0, str(root_dir))
-
-    from backend.analyzer.dependency_audit import audit_dependencies  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.lint_flake8 import analyze_flake8  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.lint_pylint import analyze_pylint  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.malware_ast import analyze_malware  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.metrics_radon import analyze_radon  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.project_health import analyze_project_health  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.security_bandit import analyze_bandit  # pylint: disable=import-outside-toplevel
-
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang chạy tích hợp các analyzer trên: {sample_dir}")
-
-    aggregated = aggregate_analysis_results(
-        radon_data=analyze_radon(sample_dir),
-        pylint_data=analyze_pylint(sample_dir),
-        bandit_data=analyze_bandit(sample_dir),
-        audit_data=audit_dependencies(sample_dir),
-        health_data=analyze_project_health(sample_dir),
-        flake8_data=analyze_flake8(sample_dir),
-        malware_data=analyze_malware(sample_dir),
-        working_dir=sample_dir,
-    )
-
-    print("\n========== BẢNG PHÂN BỐ MỨC ĐỘ LỖI ==========")
-    print(json.dumps(aggregated["severity_distribution"], indent=2))
-
-    print("\n========== TOP 5 FILE CÓ RỦI RO CAO NHẤT ==========")
-    for idx, item in enumerate(aggregated["top_risk_files"], 1):
-        print(
-            f"{idx}. File: {item['file']} | Tổng lỗi: {item['total_issues']} "
-            f"(Critical: {item['critical_count']}, High: {item['high_count']}, "
-            f"Medium: {item['medium_count']}, Low: {item['low_count']}) "
-            f"| CC: {item.get('cc')} | MI: {item.get('mi')}"
-        )
-
-
-if __name__ == "__main__":
-    _run_sample_aggregation()

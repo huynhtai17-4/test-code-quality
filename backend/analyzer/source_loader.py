@@ -216,35 +216,3 @@ def prepare_source(
             "Chỉ chấp nhận 'local_dir', 'zip', hoặc 'github'."
         ),
     }
-
-
-def _run_sample_test() -> None:
-    """Khối kiểm nghiệm nén và giải nén an toàn bad_project."""
-    sample_src = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    test_ws = DEFAULT_WORKSPACE_ROOT / "test_run"
-    test_ws.mkdir(parents=True, exist_ok=True)
-
-    temp_zip = test_ws / "bad_project_test.zip"
-    extract_target = test_ws / "extracted_project"
-
-    print(f"[*] 1. Đang nén thư mục '{sample_src}' thành '{temp_zip}'...")
-    with zipfile.ZipFile(temp_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(sample_src):
-            for file in files:
-                abs_file = Path(root) / file
-                rel_arc = abs_file.relative_to(sample_src)
-                zf.write(abs_file, rel_arc)
-
-    print(f"[+] 2. Đang giải nén an toàn qua extract_zip_safe tới '{extract_target}'...")
-    extracted_path = extract_zip_safe(temp_zip, extract_target)
-
-    extracted_files = [f.name for f in extracted_path.iterdir() if f.is_file()]
-    print(f"[+] 3. Giải nén thành công! Các tệp giải nén được: {extracted_files}")
-
-    print("[*] 4. Đang dọn dẹp thư mục làm việc tạm thời...")
-    cleanup_workspace(test_ws)
-    print("[OK] Đã dọn dẹp sạch sẽ toàn bộ thư mục tạm. Kiểm thử hoàn tất thành công!")
-
-
-if __name__ == "__main__":
-    _run_sample_test()

@@ -98,37 +98,3 @@ def handle_delete_project(data: dict[str, Any]) -> dict[str, Any]:
         return success_response({"deleted": deleted})
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return error_response(f"Lỗi khi xóa dự án: {exc}")
-
-
-def _test_project_handler() -> None:
-    """Kịch bản kiểm thử độc lập cho project_handler."""
-    print("[*] Kiểm thử độc lập project_handler...")
-    create_res = handle_create_project({
-        "name": "Handler Demo Project",
-        "source_path": "backend/samples/bad_project",
-        "description": "Dự án tạo thử bởi project_handler",
-    })
-    print(f"[+] Tạo dự án: {create_res}")
-    if create_res.get("status") != "ok":
-        return
-
-    proj_id = create_res["data"]["project_id"]
-    try:
-        get_res = handle_get_project({"project_id": proj_id})
-        print(f"[+] Đọc thông tin: {get_res}")
-
-        update_res = handle_update_project({
-            "project_id": proj_id,
-            "description": "Mô tả mới sau cập nhật",
-        })
-        print(f"[+] Cập nhật dự án: {update_res}")
-
-        list_res = handle_list_projects({})
-        print(f"[+] Danh sách dự án hiện có: {len(list_res.get('data', []))} dự án")
-    finally:
-        del_res = handle_delete_project({"project_id": proj_id})
-        print(f"[+] Xóa dự án: {del_res}")
-
-
-if __name__ == "__main__":
-    _test_project_handler()

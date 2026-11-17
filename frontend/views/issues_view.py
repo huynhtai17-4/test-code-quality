@@ -28,7 +28,6 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -64,7 +63,6 @@ from frontend.views.theme import (
     TEXT_MAIN,
     TEXT_MUTED,
     lay_font_code,
-    load_stylesheet,
 )
 from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
@@ -1241,127 +1239,3 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Thiết lập lọc theo đường dẫn tệp tin cụ thể."""
         self.search_input.setText(file_path)
         self._on_search_changed(file_path)
-
-
-def _get_mock_issues() -> list[dict[str, Any]]:
-    """Tạo 6 lỗi mẫu đa dạng đại diện cho các công cụ Bandit, Pylint, Pip-audit, Radon."""
-    return [
-        {
-            "id": 1,
-            "file_path": "backend/database/repositories/issue_repo.py",
-            "line_number": 42,
-            "severity": "critical",
-            "status": "open",
-            "tool": "bandit",
-            "rule_code": "B608",
-            "message": (
-                "B608: Có nguy cơ SQL injection do nối chuỗi trực tiếp vào câu truy vấn.\n"
-                "Khuyến nghị: Sử dụng tham số hóa câu truy vấn (%s) thay vì nối chuỗi."
-            ),
-            "code_snippet": (
-                "def get_issue(issue_id):\n"
-                "    db = get_db()\n"
-                "    cursor = db.cursor()\n"
-                "    query = 'SELECT * FROM issues WHERE id = ' + issue_id\n"
-                "    cursor.execute(query)\n"
-                "    return cursor.fetchone()\n"
-                "    cursor.close()"
-            ),
-            "note": "Cần refactor lại câu lệnh SQL để tránh SQL injection.",
-        },
-        {
-            "id": 2,
-            "file_path": "backend/config.py",
-            "line_number": 18,
-            "severity": "high",
-            "status": "in_progress",
-            "tool": "bandit",
-            "rule_code": "B105",
-            "message": (
-                "B105: Phát hiện mật khẩu cơ sở dữ liệu hardcoded trực tiếp trong mã nguồn.\n"
-                "Khuyến nghị: Chuyển toàn bộ bí mật vào file biến môi trường .env."
-            ),
-            "note": "Đang chuyển cấu hình sang nạp từ biến môi trường qua os.environ.",
-        },
-        {
-            "id": 3,
-            "file_path": "frontend/views/projects_view.py",
-            "line_number": 112,
-            "severity": "low",
-            "status": "fixed",
-            "tool": "pylint",
-            "rule_code": "C0301",
-            "message": (
-                "C0301: Chiều dài dòng vượt quá giới hạn chuẩn 100 ký tự (108/100).\n"
-                "Khuyến nghị: Xuống dòng hợp lý theo tiêu chuẩn PEP8."
-            ),
-            "note": "Đã ngắt dòng thành nhiều dòng ngắn hơn.",
-        },
-        {
-            "id": 4,
-            "file_path": "backend/analyzer/metrics.py",
-            "line_number": 85,
-            "severity": "medium",
-            "status": "open",
-            "tool": "radon",
-            "rule_code": "RADON-CC",
-            "message": (
-                "Độ phức tạp chu trình (Cyclomatic Complexity) của "
-                "hàm calculate_all là 18 (Bậc C).\n"
-                "Khuyến nghị: Tách hàm thành các phương thức nhỏ hơn để tăng tính bảo trì."
-            ),
-            "note": None,
-        },
-        {
-            "id": 5,
-            "file_path": "requirements.txt",
-            "line_number": 14,
-            "severity": "high",
-            "status": "open",
-            "tool": "pip-audit",
-            "rule_code": "CVE-2023-43804",
-            "message": (
-                "Thư viện urllib3 phiên bản 1.26.15 dính lỗ hổng Cookie Leakage (CVE-2023-43804).\n"
-                "Khuyến nghị: Nâng cấp urllib3 lên phiên bản >= 1.26.17 hoặc >= 2.0.6."
-            ),
-            "note": "Đã tạo ticket phụ trách nâng cấp thư viện tuần tới.",
-        },
-        {
-            "id": 6,
-            "file_path": "backend/network/router.py",
-            "line_number": 77,
-            "severity": "medium",
-            "status": "ignored",
-            "tool": "manual",
-            "rule_code": "SEC-CUSTOM-01",
-            "message": (
-                "Thiếu kiểm tra quyền hạn chi tiết khi gọi endpoint config.update.\n"
-                "Khuyến nghị: Bổ sung lớp middleware kiểm tra token phiên làm việc."
-            ),
-            "note": "Báo sai: Môi trường mạng nội bộ hiện tại chưa yêu cầu phân quyền quản trị.",
-        },
-    ]
-
-
-def main() -> None:
-    """Hàm chạy thử độc lập màn hình Quản lý Lỗi (IssuesView) trong cửa sổ 1100x700."""
-    app = QApplication(sys.argv)
-    stylesheet = load_stylesheet()
-    if stylesheet:
-        app.setStyleSheet(stylesheet)
-
-    view = IssuesView()
-    view.setWindowTitle("Code Quality & Security Analyzer - Quản lý Lỗi")
-    view.resize(1100, 700)
-
-    mock_issues = _get_mock_issues()
-    view.set_issues(mock_issues)
-
-    view.status_message.connect(lambda msg: print(f"[Status] {msg}"))
-    view.show()
-
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

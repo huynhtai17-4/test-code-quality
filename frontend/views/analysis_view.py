@@ -26,7 +26,6 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
-    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -56,7 +55,6 @@ from frontend.views.theme import (
     TEXT_MAIN,
     TEXT_MUTED,
     lay_font_code,
-    load_stylesheet,
 )
 from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.grade_label import GradeLabel
@@ -1391,109 +1389,3 @@ class AnalysisView(QWidget):
         return _build_html_report_content(
             report_meta, crit_scores, radar_b64, risk_b64, crit_high
         )
-
-
-def main() -> None:
-    """Hàm chạy thử độc lập giao diện AnalysisView."""
-    q_app = QApplication.instance() or QApplication(sys.argv)
-    q_app.setStyleSheet(load_stylesheet())
-
-    test_window = QWidget()
-    test_window.setWindowTitle("Kiểm tra Màn hình Phân tích (AnalysisView) - SKILLS.md")
-    test_window.resize(1100, 720)
-
-    win_layout = QVBoxLayout(test_window)
-    win_layout.setContentsMargins(0, 0, 0, 0)
-
-    view = AnalysisView(test_window)
-    win_layout.addWidget(view)
-
-    mock_data = {
-        "id": 1,
-        "session_id": 42,
-        "name": "flask",
-        "total_score": 79.3,
-        "grade": "B",
-        "total_files": 214,
-        "total_loc": 18420,
-        "total_issues": 53,
-        "criteria_scores": {
-            "complexity": 72.0,
-            "security": 88.0,
-            "pylint": 61.0,
-            "health": 70.0,
-            "dependency": 79.0,
-        },
-        "severity_distribution": {
-            "Critical": 3,
-            "High": 11,
-            "Medium": 24,
-            "Low": 15,
-        },
-        "top_risk_files": [
-            {
-                "file": "src/flask/app.py",
-                "total_issues": 16,
-                "critical_count": 2,
-                "high_count": 5,
-                "medium_count": 6,
-                "low_count": 3,
-                "cc": 8.4,
-                "mi": 42.1,
-            },
-            {
-                "file": "src/flask/helpers.py",
-                "total_issues": 12,
-                "critical_count": 1,
-                "high_count": 4,
-                "medium_count": 5,
-                "low_count": 2,
-                "cc": 6.2,
-                "mi": 51.0,
-            },
-            {
-                "file": "src/flask/sessions.py",
-                "total_issues": 9,
-                "critical_count": 0,
-                "high_count": 2,
-                "medium_count": 4,
-                "low_count": 3,
-                "cc": 4.5,
-                "mi": 63.8,
-            },
-            {
-                "file": "src/flask/blueprints.py",
-                "total_issues": 9,
-                "critical_count": 0,
-                "high_count": 0,
-                "medium_count": 6,
-                "low_count": 3,
-                "cc": 3.8,
-                "mi": 68.2,
-            },
-            {
-                "file": "src/flask/templating.py",
-                "total_issues": 7,
-                "critical_count": 0,
-                "high_count": 0,
-                "medium_count": 3,
-                "low_count": 4,
-                "cc": 2.9,
-                "mi": 74.5,
-            },
-        ],
-    }
-
-    view.set_project(mock_data)
-    test_window.show()
-
-    if "--test" in sys.argv:
-        q_app.processEvents()
-        print("AnalysisView initialized and tested successfully!")
-        sys.exit(0)
-
-    sys.exit(q_app.exec())
-
-
-if __name__ == "__main__":
-    main()

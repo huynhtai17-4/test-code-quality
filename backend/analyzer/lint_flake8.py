@@ -143,13 +143,3 @@ def analyze_flake8(
             "total_issues": 0,
             "issues": [],
         }
-
-
-if __name__ == "__main__":
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang thực hiện kiểm tra Flake8 trên: {sample_dir}")
-    res = analyze_flake8(sample_dir)
-    print(f"[+] Status: {res['status']}")
-    print(f"[+] Issues found: {res['total_issues']}")
-    for item in res["issues"]:
-        print(f"    - [{item['severity']}] {item['file']}:{item['line']} - {item['message']}")

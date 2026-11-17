@@ -11,7 +11,6 @@ if str(ROOT_DIR) not in sys.path:
 # pylint: disable=wrong-import-position,no-name-in-module
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
@@ -36,7 +35,6 @@ from frontend.views.theme import (
     TEXT_MAIN,
     TEXT_MUTED,
     TRONG_SO_MAC_DINH,
-    load_stylesheet,
 )
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
@@ -448,22 +446,3 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         for key, val in weights.items():
             if key in self.weight_spins:
                 self.weight_spins[key].setValue(float(val))
-
-
-def main() -> None:
-    """Hàm chạy thử độc lập màn hình Cài đặt trong cửa sổ 1100x700."""
-    app = QApplication(sys.argv)
-    qss = load_stylesheet()
-    if qss:
-        app.setStyleSheet(qss)
-
-    settings_window = SettingsView()
-    settings_window.setWindowTitle("Code Quality & Security Analyzer - Cài đặt hệ thống")
-    settings_window.resize(1100, 700)
-    settings_window.status_message.connect(lambda text: print(f"[Settings Status] {text}"))
-    settings_window.show()
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

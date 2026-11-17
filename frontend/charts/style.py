@@ -62,11 +62,3 @@ def apply_chart_style() -> None:
         "legend.frameon": False,
     }
     mpl.rcParams.update(config)
-
-
-if __name__ == "__main__":
-    apply_chart_style()
-    print("[+] Đã áp dụng thành công cấu hình Matplotlib theo SKILLS.md!")
-    print(f"    - figure.facecolor : {mpl.rcParams['figure.facecolor']}")
-    print(f"    - axes.spines.top  : {mpl.rcParams['axes.spines.top']}")
-    print(f"    - axes.titlelocation: {mpl.rcParams['axes.titlelocation']}")

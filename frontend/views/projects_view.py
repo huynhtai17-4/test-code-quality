@@ -19,7 +19,6 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -46,7 +45,6 @@ from frontend.views.theme import (
     TEXT_MUTED,
     format_datetime,
     lay_font_code,
-    load_stylesheet,
 )
 from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
@@ -714,71 +712,3 @@ class ProjectsView(QWidget):
             self._on_edit_project()
         elif action == act_delete:
             self._on_delete_project()
-
-
-def main() -> None:
-    """Hàm chạy thử độc lập giao diện ProjectsView."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-
-    app.setStyleSheet(load_stylesheet())
-
-    window = QWidget()
-    window.setWindowTitle("Kiểm tra Màn hình Quản lý Dự án (ProjectsView) - SKILLS.md")
-    window.resize(1100, 680)
-
-    v_layout = QVBoxLayout(window)
-    v_layout.setContentsMargins(0, 0, 0, 0)
-
-    view = ProjectsView(window)
-    v_layout.addWidget(view)
-
-    # Nếu không kết nối được server, tự động nạp dữ liệu mẫu để kiểm tra layout
-    if not api.ping_server(timeout=0.3):
-        mock_data = [
-            {
-                "id": 1,
-                "name": "flask",
-                "path": "https://github.com/pallets/flask",
-                "source_type": "github",
-                "description": "The Python micro framework for building web applications.",
-                "last_analyzed_at": "2026-11-09 14:32:00",
-                "total_score": 82.0,
-                "grade": "B",
-            },
-            {
-                "id": 2,
-                "name": "bad_project",
-                "path": "d:/Python/Đồ-Án/backend/samples/bad_project",
-                "source_type": "local",
-                "description": "Dự án mẫu kiểm thử chứa lỗi bảo mật và vi phạm PEP8.",
-                "last_analyzed_at": None,
-                "total_score": None,
-                "grade": None,
-            },
-            {
-                "id": 3,
-                "name": "ShopEngine-Service",
-                "path": "d:/Python/ShopEngine",
-                "source_type": "local",
-                "description": "Backend dịch vụ thanh toán và xử lý đơn hàng.",
-                "last_analyzed_at": "2026-11-08 09:15:00",
-                "total_score": 91.5,
-                "grade": "A",
-            },
-        ]
-        view._on_projects_loaded({"status": "ok", "data": mock_data})  # pylint: disable=protected-access
-
-    window.show()
-
-    if "--test" in sys.argv:
-        app.processEvents()
-        print("ProjectsView initialized and tested successfully!")
-        sys.exit(0)
-
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

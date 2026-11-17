@@ -259,7 +259,3 @@ def test_connection() -> bool:
         return _test_sqlite(db_path)
 
     return _test_mysql()
-
-
-if __name__ == "__main__":
-    test_connection()

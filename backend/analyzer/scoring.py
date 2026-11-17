@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -235,49 +233,3 @@ def calculate_final_score(
         "criteria_scores": normalized_criteria,
         "weights_used": weights_used,
     }
-
-
-def _run_sample_scoring() -> None:
-    """Hàm phụ trợ cho khối __main__ chạy thử nghiệm chấm điểm với dữ liệu thực tế."""
-    import sys  # pylint: disable=import-outside-toplevel
-    root_dir = Path(__file__).resolve().parents[2]
-    if str(root_dir) not in sys.path:
-        sys.path.insert(0, str(root_dir))
-
-    from backend.analyzer.dependency_audit import audit_dependencies  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.malware_ast import analyze_malware  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.project_health import analyze_project_health  # pylint: disable=import-outside-toplevel
-    from backend.analyzer.security_bandit import analyze_bandit  # pylint: disable=import-outside-toplevel
-
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Thu thập dữ liệu phân tích từ: {sample_dir}")
-
-    criteria = build_criteria_scores(
-        radon_data={"status": "ok", "avg_maintainability": 65.0},
-        bandit_data=analyze_bandit(sample_dir),
-        pylint_data={"status": "ok", "score": 7.2},
-        health_data=analyze_project_health(sample_dir),
-        audit_data=audit_dependencies(sample_dir),
-        malware_data=analyze_malware(sample_dir),
-    )
-
-    result = calculate_final_score(criteria)
-
-    print("\n========== KẾT QUẢ CHẤM ĐIỂM TỔNG KẾT (NUMPY) ==========")
-    print(f"Điểm tổng kết  : {result['total_score']} / 100")
-    print(f"Chất lượng code: {result['quality_score']} / 100")
-    print(f"An toàn bảo mật: {result['security_score']} / 100")
-    print(f"Xếp loại       : Hạng {result['grade']}")
-    print("\nĐiểm thành phần (Criteria Scores):")
-    for k, v in result["criteria_scores"].items():
-        print(f"  - {k:<12}: {v:>6.2f} / 100")
-    print("\nTrọng số áp dụng (Weights Used):")
-    for k, v in result["weights_used"].items():
-        print(f"  - {k:<12}: {v*100:>5.1f}%")
-
-    print("\nToàn bộ kết quả JSON:")
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    _run_sample_scoring()

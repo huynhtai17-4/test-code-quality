@@ -1,6 +1,5 @@
 """Module kiểm tra sức khỏe dự án (tệp chuẩn mực, cấu trúc và thông tin Git)."""
 
-import json
 import shutil
 import subprocess  # nosec B404
 from pathlib import Path
@@ -224,10 +223,3 @@ def analyze_project_health(
         "total_issues": len(issues),
         "issues": issues,
     }
-
-
-if __name__ == "__main__":
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang thực hiện kiểm tra sức khỏe dự án: {sample_dir}")
-    health_result = analyze_project_health(sample_dir)
-    print(json.dumps(health_result, indent=2, ensure_ascii=False))

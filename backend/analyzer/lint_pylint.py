@@ -177,14 +177,3 @@ def analyze_pylint(
             "total_issues": 0,
             "issues": [],
         }
-
-
-if __name__ == "__main__":
-    sample_dir = Path(__file__).resolve().parents[1] / "samples" / "bad_project"
-    print(f"[*] Đang thực hiện phân tích Pylint trên: {sample_dir}")
-    res = analyze_pylint(sample_dir)
-    print(f"[+] Status: {res['status']}")
-    print(f"[+] Score: {res['score']} / 10.0")
-    print(f"[+] Issues found: {res['total_issues']}")
-    for iss in res["issues"][:3]:
-        print(f"    - [{iss['severity']}] {iss['file']}:{iss['line']} - {iss['message']}")

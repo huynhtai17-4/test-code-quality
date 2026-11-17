@@ -4,7 +4,6 @@ import logging
 import socket
 import sys
 import threading
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -134,54 +133,3 @@ class SocketServer:
                     pass
                 self.server_sock = None
             logger.info("Máy chủ socket đã dừng thành công.")
-
-
-def _run_server_test() -> None:
-    """Kịch bản kiểm thử độc lập cho SocketServer."""
-    test_port = 8899
-    server = SocketServer(host="127.0.0.1", port=test_port)
-
-    # 1. Khởi động server trên một thread nền
-    server_thread = threading.Thread(target=server.start, daemon=True)
-    server_thread.start()
-
-    # Chờ server khởi động và mở socket
-    time.sleep(0.5)
-
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        # 2. Client kết nối tới server
-        print(f"[*] Client đang kết nối tới 127.0.0.1:{server.port}...")
-        client.connect(("127.0.0.1", server.port))
-        print("[+] Kết nối client thành công!")
-
-        # 3. Client gửi request config.get
-        test_request = {"action": "config.get", "data": {}}
-        print(f"[*] Client gửi request: {test_request}")
-        send_ok = protocol.send_json(client, test_request)
-        if not send_ok:
-            raise RuntimeError("Client gửi dữ liệu thất bại!")
-
-        # 4. Client nhận response
-        response = protocol.recv_json(client)
-        print(f"[+] Client nhận được phản hồi: {response}")
-
-        if not response or response.get("status") != "ok":
-            raise RuntimeError("Phản hồi từ server không đạt yêu cầu status: ok!")
-
-        configs = response.get("data", [])
-        print(
-            f"[PASSED] Xác nhận server hoạt động chuẩn xác, "
-            f"nhận được {len(configs)} tiêu chí cấu hình!"
-        )
-
-    finally:
-        # 5. Đóng client và dừng server
-        client.close()
-        server.stop()
-        server_thread.join(timeout=2.0)
-        print("[+] Đã đóng kết nối client và dừng server thành công!")
-
-
-if __name__ == "__main__":
-    _run_server_test()
