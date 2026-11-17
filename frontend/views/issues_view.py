@@ -15,58 +15,38 @@ from PyQt6.QtCore import (
     pyqtSignal,
 )
 from PyQt6.QtGui import (
-    QColor,
     QKeySequence,
     QShortcut,
-    QTextCursor,
-    QTextFormat,
 )
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QStackedLayout,
     QTableView,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from frontend.controllers.issue_controller import IssueController
 from frontend.models.issue_model import (
     IssueFilterProxyModel,
     IssueTableModel,
-    _format_location,
-    _normalize_severity,
-    _normalize_status,
-    _prepare_snippet_lines,
-    _TOOL_DISPLAY_MAP,
 )
-from frontend.controllers.issue_controller import IssueController
+from frontend.views.components.issue_detail_panel import IssueDetailPanel
 from frontend.views.dialogs.manual_issue_dialog import ManualIssueDialog
-from frontend.views.theme import (
-    BORDER,
-    BORDER_SOFT,
-    SURFACE,
-    SURFACE_ALT,
-    TEXT_MAIN,
-    TEXT_MUTED,
-    lay_font_code,
-)
 from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
 from frontend.views.widgets.page_header import PageHeader
 from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
-from frontend.views.widgets.severity_badge import SeverityBadge
 from frontend.views.widgets.table_utils import chuan_hoa_bang
 
 
@@ -74,8 +54,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
     """
     Màn hình Quản lý Lỗi mã nguồn (IssuesView).
 
-    Điều phối toàn bộ bảng danh sách lỗi, chi tiết lỗi, thao tác đổi trạng thái,
-    ghi chú và xóa lỗi theo thời gian thực.
+    Điều phối danh sách bảng lỗi, bộ lọc đa tiêu chí và panel chi tiết lỗi.
     """
 
     status_message = pyqtSignal(str)
@@ -84,7 +63,6 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._session_id: int | None = None
-        self._selected_issue: dict[str, Any] | None = None
 
         self._controller = IssueController(self)
         self._controller.issues_loaded.connect(self._on_issues_loaded)
@@ -110,19 +88,10 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
             description="Không có lỗi nào khớp với bộ lọc hiện tại hoặc dự án chưa có lỗi.",
         )
         self.table_stack = QStackedLayout()
-
-        self.lbl_detail_location = QLabel("—")
-        self.badge_severity = SeverityBadge("Medium")
-        self.lbl_detail_rule = QLabel("—")
-        self.txt_detail_desc = QTextEdit()
-        self.txt_code_snippet = QPlainTextEdit()
-        self.combo_detail_status = QComboBox()
-        self.edit_detail_note = QLineEdit()
-        self.btn_save_note = QPushButton("Lưu ghi chú")
+        self.detail_panel = IssueDetailPanel(self)
 
         self.inline_notice = InlineNotice(parent=self)
         self.inline_notice.setVisible(False)
-        self._detail_stack: QStackedLayout | None = None
 
         self._init_ui()
         self._setup_shortcuts()
@@ -152,10 +121,10 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         splitter.setChildrenCollapsible(False)
 
         table_container = self._create_table_container()
-        detail_container = self._create_detail_panel()
+        self.detail_panel.save_note_requested.connect(self._on_save_detail_note)
 
         splitter.addWidget(table_container)
-        splitter.addWidget(detail_container)
+        splitter.addWidget(self.detail_panel)
         splitter.setSizes([550, 350])
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
@@ -163,45 +132,34 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         main_layout.addWidget(splitter, 1)
 
     def _create_toolbar(self) -> QHBoxLayout:
-        """Tạo thanh công cụ trên cùng với các bộ lọc theo chuẩn ArtCraft."""
+        """Khởi tạo thanh công cụ bộ lọc 3 cấp độ và thanh tìm kiếm thời gian thực."""
         layout = QHBoxLayout()
         layout.setSpacing(10)
 
         lbl_sev = QLabel("Mức:")
-        lbl_sev.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        self.combo_filter_sev.addItems(
-            ["Tất cả", "Nghiêm trọng", "Cao", "Trung bình", "Thấp"]
-        )
-        self.combo_filter_sev.setItemData(0, "all")
-        self.combo_filter_sev.setItemData(1, "critical")
-        self.combo_filter_sev.setItemData(2, "high")
-        self.combo_filter_sev.setItemData(3, "medium")
-        self.combo_filter_sev.setItemData(4, "low")
+        self.combo_filter_sev.addItem("Tất cả", "all")
+        self.combo_filter_sev.addItem("Critical", "critical")
+        self.combo_filter_sev.addItem("High", "high")
+        self.combo_filter_sev.addItem("Medium", "medium")
+        self.combo_filter_sev.addItem("Low", "low")
         self.combo_filter_sev.currentIndexChanged.connect(self._on_filter_changed)
 
         lbl_status = QLabel("Trạng thái:")
-        lbl_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        self.combo_filter_status.addItems(
-            ["Tất cả", "Chưa sửa", "Đang sửa", "Đã sửa", "Báo sai"]
-        )
-        self.combo_filter_status.setItemData(0, "all")
-        self.combo_filter_status.setItemData(1, "open")
-        self.combo_filter_status.setItemData(2, "in_progress")
-        self.combo_filter_status.setItemData(3, "fixed")
-        self.combo_filter_status.setItemData(4, "ignored")
+        self.combo_filter_status.addItem("Tất cả", "all")
+        self.combo_filter_status.addItem("Chưa sửa", "open")
+        self.combo_filter_status.addItem("Đang sửa", "in_progress")
+        self.combo_filter_status.addItem("Đã sửa", "fixed")
+        self.combo_filter_status.addItem("Báo sai", "ignored")
         self.combo_filter_status.currentIndexChanged.connect(self._on_filter_changed)
 
         lbl_tool = QLabel("Công cụ:")
-        lbl_tool.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        self.combo_filter_tool.addItems(
-            ["Tất cả", "Bandit", "Pylint", "Radon", "Pip-audit", "Thủ công"]
-        )
-        self.combo_filter_tool.setItemData(0, "all")
-        self.combo_filter_tool.setItemData(1, "bandit")
-        self.combo_filter_tool.setItemData(2, "pylint")
-        self.combo_filter_tool.setItemData(3, "radon")
-        self.combo_filter_tool.setItemData(4, "pip-audit")
-        self.combo_filter_tool.setItemData(5, "manual")
+        self.combo_filter_tool.addItem("Tất cả", "all")
+        self.combo_filter_tool.addItem("Bandit", "bandit")
+        self.combo_filter_tool.addItem("Pylint", "pylint")
+        self.combo_filter_tool.addItem("Radon", "radon")
+        self.combo_filter_tool.addItem("Pip-audit", "pip-audit")
+        self.combo_filter_tool.addItem("Mã độc & AST", "malware-ast")
+        self.combo_filter_tool.addItem("Manual", "manual")
         self.combo_filter_tool.currentIndexChanged.connect(self._on_filter_changed)
 
         self.search_input.setPlaceholderText(
@@ -253,114 +211,6 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         return container
 
-    def _create_detail_placeholder(self, parent: QWidget) -> QWidget:
-        """Tạo trang thông điệp hướng dẫn khi chưa chọn lỗi nào trên bảng."""
-        placeholder = QWidget(parent)
-        ph_layout = QVBoxLayout(placeholder)
-        ph_layout.setContentsMargins(20, 24, 20, 24)
-        ph_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_hint = QLabel(
-            "Chọn một dòng lỗi trên bảng để xem chi tiết và khuyến nghị sửa chữa.",
-            placeholder,
-        )
-        lbl_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_hint.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 13px; font-weight: 500; border: none;"
-        )
-        ph_layout.addWidget(lbl_hint)
-        return placeholder
-
-    def _create_detail_form(self, parent: QWidget) -> QWidget:
-        """Tạo trang form chi tiết khi đã chọn một lỗi."""
-        detail_form = QWidget(parent)
-        layout = QVBoxLayout(detail_form)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
-
-        # Header chi tiết
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(10)
-
-        self.lbl_detail_location.setFont(lay_font_code(12))
-        self.lbl_detail_location.setStyleSheet("font-weight: 600; border: none;")
-
-        self.lbl_detail_rule.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px; border: none;")
-
-        header_layout.addWidget(self.lbl_detail_location)
-        header_layout.addWidget(self.badge_severity)
-        header_layout.addWidget(self.lbl_detail_rule)
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
-
-        # Khối mô tả chi tiết
-        self.txt_detail_desc.setReadOnly(True)
-        self.txt_detail_desc.setStyleSheet(
-            "QTextEdit { border: none; background: transparent; font-size: 13px; }"
-        )
-        self.txt_detail_desc.setPlaceholderText(
-            "Chọn một dòng lỗi trên bảng để xem chi tiết và khuyến nghị sửa chữa..."
-        )
-        layout.addWidget(self.txt_detail_desc)
-
-        # Code Snippet Viewer
-        self.txt_code_snippet.setReadOnly(True)
-        self.txt_code_snippet.setFont(lay_font_code(11))
-        self.txt_code_snippet.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.txt_code_snippet.setStyleSheet(
-            f"QPlainTextEdit {{ background-color: {SURFACE_ALT}; border: 1px solid {BORDER_SOFT}; "
-            f"border-radius: 4px; padding: 6px; color: {TEXT_MAIN}; }}"
-        )
-        self.txt_code_snippet.setVisible(False)
-        layout.addWidget(self.txt_code_snippet, 1)
-
-        # Thanh cập nhật trạng thái & ghi chú
-        status_bar_layout = QHBoxLayout()
-        status_bar_layout.setSpacing(8)
-
-        lbl_status = QLabel("Trạng thái:")
-        lbl_status.setStyleSheet("border: none; font-size: 13px;")
-
-        self.combo_detail_status.addItem("Chưa sửa", "open")
-        self.combo_detail_status.addItem("Đang sửa", "in_progress")
-        self.combo_detail_status.addItem("Đã sửa", "fixed")
-        self.combo_detail_status.addItem("Báo sai", "ignored")
-
-        lbl_note = QLabel("Ghi chú:")
-        lbl_note.setStyleSheet("border: none; font-size: 13px;")
-
-        self.edit_detail_note.setPlaceholderText("Ghi chú hướng khắc phục hoặc tiến độ...")
-        self.btn_save_note.clicked.connect(self._on_save_detail_note)
-
-        status_bar_layout.addWidget(lbl_status)
-        status_bar_layout.addWidget(self.combo_detail_status)
-        status_bar_layout.addWidget(lbl_note)
-        status_bar_layout.addWidget(self.edit_detail_note, 1)
-        status_bar_layout.addWidget(self.btn_save_note)
-
-        layout.addLayout(status_bar_layout)
-        return detail_form
-
-    def _create_detail_panel(self) -> QFrame:
-        """Tạo khung chi tiết lỗi (Detail Panel) bên dưới QSplitter."""
-        panel = QFrame()
-        panel.setStyleSheet(
-            f"QFrame {{ background-color: {SURFACE}; border: 1px solid {BORDER}; "
-            f"border-radius: 4px; }}"
-        )
-        self._detail_stack = QStackedLayout(panel)
-        self._detail_stack.setContentsMargins(0, 0, 0, 0)
-
-        # 1. Trang hướng dẫn khi chưa chọn lỗi (Placeholder)
-        placeholder = self._create_detail_placeholder(panel)
-        self._detail_stack.addWidget(placeholder)  # Index 0
-
-        # 2. Trang hiển thị chi tiết khi đã chọn lỗi (Form)
-        detail_form = self._create_detail_form(panel)
-        self._detail_stack.addWidget(detail_form)  # Index 1
-
-        self._detail_stack.setCurrentIndex(0)
-        return panel
-
     def _setup_shortcuts(self) -> None:
         """Thiết lập phím tắt Ctrl+F và phím Delete."""
         shortcut_find = QShortcut(QKeySequence("Ctrl+F"), self)
@@ -394,7 +244,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Chuyển đổi giữa bảng dữ liệu và trạng thái rỗng khi không có dòng nào."""
         if self._proxy_model.rowCount() == 0:
             self.table_stack.setCurrentIndex(1)
-            self._clear_detail_panel()
+            self.detail_panel.clear()
         else:
             self.table_stack.setCurrentIndex(0)
 
@@ -406,145 +256,37 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Cập nhật khung chi tiết khi người dùng chọn dòng trên bảng."""
         indexes = self.table_view.selectionModel().selectedRows()
         if not indexes:
-            self._clear_detail_panel()
+            self.detail_panel.clear()
             return
 
         proxy_index = indexes[0]
         source_index = self._proxy_model.mapToSource(proxy_index)
         issue = self._table_model.data(source_index, Qt.ItemDataRole.UserRole)
         if isinstance(issue, dict):
-            self._display_issue_detail(issue)
+            self.detail_panel.display_issue(issue)
 
-    def _display_code_snippet(self, snippet_raw: Any, target_line: int) -> None:
-        """Hiển thị đoạn trích mã nguồn có số dòng và tô màu đỏ nhạt dòng lỗi."""
-        self.txt_code_snippet.clear()
-        self.txt_code_snippet.setExtraSelections([])
-        if not snippet_raw:
-            self.txt_code_snippet.setVisible(False)
-            self.txt_detail_desc.setMaximumHeight(16777215)
-            return
-
-        formatted_lines = _prepare_snippet_lines(snippet_raw, target_line)
-        if not formatted_lines:
-            self.txt_code_snippet.setVisible(False)
-            self.txt_detail_desc.setMaximumHeight(16777215)
-            return
-
-        self.txt_code_snippet.setVisible(True)
-        self.txt_detail_desc.setMaximumHeight(85)
-        full_text = "\n".join(text for _, text in formatted_lines)
-        self.txt_code_snippet.setPlainText(full_text)
-
-        extra_selections: list[QTextEdit.ExtraSelection] = []
-        doc = self.txt_code_snippet.document()
-        if target_line > 0:
-            for block_idx, (ln, _) in enumerate(formatted_lines):
-                if ln == target_line:
-                    block = doc.findBlockByLineNumber(block_idx)
-                    if block.isValid():
-                        sel = QTextEdit.ExtraSelection()
-                        sel.format.setBackground(QColor("#FDECEC"))
-                        sel.format.setProperty(
-                            QTextFormat.Property.FullWidthSelection, True
-                        )
-                        sel.cursor = QTextCursor(block)
-                        extra_selections.append(sel)
-        self.txt_code_snippet.setExtraSelections(extra_selections)
-
-    def _display_issue_detail(self, issue: dict[str, Any]) -> None:
-        """Hiển thị thông tin chi tiết một lỗi vào panel dưới."""
-        if self._detail_stack is not None:
-            self._detail_stack.setCurrentIndex(1)
-        self._selected_issue = issue
-        self.lbl_detail_location.setText(_format_location(issue))
-        self.badge_severity.set_severity(_normalize_severity(issue.get("severity")))
-
-        tool_name = _TOOL_DISPLAY_MAP.get(
-            str(issue.get("tool") or "").lower(),
-            str(issue.get("tool") or "").capitalize(),
-        )
-        rule_code = str(issue.get("rule_code") or "").strip()
-        rule_text = f"Công cụ: {tool_name}"
-        if rule_code:
-            rule_text += f" · Mã kiểm thử: {rule_code}"
-        self.lbl_detail_rule.setText(rule_text)
-
-        desc = str(issue.get("message") or "")
-        remediation = str(issue.get("remediation") or "").strip()
-        if remediation:
-            desc = f"{desc}\n\nĐề xuất khắc phục:\n{remediation}"
-        self.txt_detail_desc.setPlainText(desc)
-
-        target_line = 0
-        raw_line = issue.get("line_number")
-        if raw_line is None:
-            raw_line = issue.get("line")
-        try:
-            target_line = int(raw_line) if raw_line is not None else 0
-        except (ValueError, TypeError):
-            target_line = 0
-        self._display_code_snippet(issue.get("code_snippet"), target_line)
-
-        curr_status = _normalize_status(issue.get("status"))
-        idx = self.combo_detail_status.findData(curr_status)
-        if idx >= 0:
-            self.combo_detail_status.setCurrentIndex(idx)
-
-        self.edit_detail_note.setText(str(issue.get("note") or ""))
-
-    def _clear_detail_panel(self) -> None:
-        """Xóa trắng nội dung khung chi tiết."""
-        if self._detail_stack is not None:
-            self._detail_stack.setCurrentIndex(0)
-        self._selected_issue = None
-        self.lbl_detail_location.setText("—")
-        self.badge_severity.set_severity("Medium")
-        self.lbl_detail_rule.setText("—")
-        self.txt_detail_desc.clear()
-        self.edit_detail_note.clear()
-        self._display_code_snippet(None, 0)
-
-    def _on_save_detail_note(self) -> None:
-        """Lưu trạng thái và ghi chú từ panel chi tiết xuống cơ sở dữ liệu."""
-        if not self._selected_issue:
-            self.status_message.emit("Chưa chọn lỗi để cập nhật.")
-            return
-
-        issue_id = self._selected_issue.get("id") or self._selected_issue.get("issue_id")
-        new_status = self.combo_detail_status.currentData() or "open"
-        new_note = self.edit_detail_note.text().strip()
-
-        if issue_id is None or self._session_id is None:
-            target_id = int(issue_id) if issue_id is not None else 0
-            self._table_model.update_issue_fields(
-                issue_id=target_id,
-                status=new_status,
-                note=new_note,
-            )
-            self._selected_issue["status"] = new_status
-            self._selected_issue["note"] = new_note
-            self.status_message.emit("Đã lưu ghi chú lỗi (chế độ độc lập).")
-            return
-
-        self._execute_update_issue(int(issue_id), new_status, new_note)
-
-    def _execute_update_issue(self, issue_id: int, status: str, note: str | None) -> None:
+    def _on_save_detail_note(self, issue_id: int, status: str, note: str | None) -> None:
         """Gửi yêu cầu cập nhật lỗi qua Controller."""
-        self.btn_save_note.setEnabled(False)
-        self._controller.update_issue(issue_id, status, note)
+        if self._session_id is not None:
+            self.detail_panel.set_save_enabled(False)
+            self._controller.update_issue(issue_id, status, note)
+        else:
+            selected = self.detail_panel.get_selected_issue()
+            if selected:
+                selected["status"] = status
+                selected["note"] = note
+            self._table_model.update_issue_fields(issue_id, status, note)
+            self.status_message.emit("Đã lưu ghi chú lỗi (chế độ độc lập).")
 
     def _on_issue_updated(self, issue_id: int, status: str, note: str | None) -> None:
         """Xử lý giao diện khi cập nhật thông tin lỗi thành công."""
-        self.btn_save_note.setEnabled(True)
+        self.detail_panel.set_save_enabled(True)
         self._table_model.update_issue_fields(issue_id, status, note)
-        if self._selected_issue:
-            self._selected_issue["status"] = status
-            self._selected_issue["note"] = note
         self.issue_updated.emit(issue_id)
 
     def _on_issue_error(self, err_msg: str) -> None:
         """Hiển thị thông báo lỗi trên giao diện."""
-        self.btn_save_note.setEnabled(True)
+        self.detail_panel.set_save_enabled(True)
         self.inline_notice.show_notice(
             f"Lỗi thao tác: {err_msg}",
             notice_type="error",
