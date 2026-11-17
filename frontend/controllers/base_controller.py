@@ -43,7 +43,7 @@ class BaseController(QObject):  # pylint: disable=too-few-public-methods
             self.status_message.emit(loading_status)
         self.loading_changed.emit(True)
 
-        worker = RequestWorker(task_fn, self)
+        worker = RequestWorker(task_fn, parent=self)
 
         def _handle_finished(result: Any) -> None:
             self._active_worker = None

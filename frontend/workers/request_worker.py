@@ -17,7 +17,7 @@ class RequestWorker(QThread):  # pylint: disable=too-few-public-methods
 
     def __init__(
         self,
-        api_func: Callable[..., dict[str, Any]],
+        api_func: Callable[..., Any],
         *args: Any,
         parent: QObject | None = None,
         **kwargs: Any,
