@@ -73,11 +73,19 @@ class PageHeader(QWidget):
         """Cập nhật tiêu đề màn hình."""
         self._lbl_title.setText(str(title).strip())
 
+    def dat_tieu_de(self, title: str) -> None:
+        """Bí danh tiếng Việt cho set_title."""
+        self.set_title(title)
+
     def set_subtitle(self, subtitle: str) -> None:
         """Cập nhật phụ đề kỹ thuật."""
         clean_sub = str(subtitle).strip()
         self._lbl_subtitle.setText(clean_sub)
         self._lbl_subtitle.setVisible(bool(clean_sub))
+
+    def dat_phu_de(self, subtitle: str) -> None:
+        """Bí danh tiếng Việt cho set_subtitle."""
+        self.set_subtitle(subtitle)
 
     def them_nut_phai(self, button: QPushButton) -> None:
         """Thêm nút hành động vào phía bên phải của tiêu đề trang."""

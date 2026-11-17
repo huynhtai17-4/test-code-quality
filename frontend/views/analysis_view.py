@@ -179,8 +179,9 @@ class AnalysisView(QWidget):
         self._project_id = project.get("id")
         self._project_name = project.get("name") or "Dự án không tên"
         if self._header:
-            self._header.dat_tieu_de(self._project_name)
-            self._header.dat_phu_de(f"Mã dự án #{self._project_id} · Đường dẫn: {project.get('path', '—')}")
+            self._header.set_title(self._project_name)
+            project_path = project.get("path", "—")
+            self._header.set_subtitle(f"Mã dự án #{self._project_id} · Đường dẫn: {project_path}")
 
         latest_session = project.get("latest_session")
         if latest_session and isinstance(latest_session, dict):
