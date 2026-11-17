@@ -1,6 +1,5 @@
 """Màn hình Lịch sử & So sánh các phiên phân tích (HistoryView) theo chuẩn SKILLS.md."""
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,29 +8,22 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-# pylint: disable=wrong-import-position,no-name-in-module,too-many-lines
+# pylint: disable=wrong-import-position,no-name-in-module
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PyQt6.QtCore import (
-    QAbstractTableModel,
     QItemSelection,
     QModelIndex,
-    Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QColor, QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QDialog,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
     QStackedLayout,
-    QTableWidget,
-    QTableWidgetItem,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -40,21 +32,17 @@ from PyQt6.QtWidgets import (
 from frontend.charts.style import (
     CHART_ACCENT,
     CHART_TEXT_MUTED,
-    TEN_TIEU_CHI,
     apply_chart_style,
 )
+from frontend.models.history_model import (
+    HistoryTableModel,
+    _format_short_date,
+)
 from frontend.network import api
+from frontend.views.dialogs.comparison_dialog import ComparisonDialog
 from frontend.views.theme import (
-    GRADE_A,
-    GRADE_COLORS,
-    GRADE_F,
-    SEV_CRITICAL,
-    SEV_HIGH,
     SURFACE,
-    TEXT_MAIN,
     TEXT_MUTED,
-    format_datetime,
-    lay_font_code,
 )
 from frontend.views.widgets.empty_state import EmptyState
 from frontend.views.widgets.inline_notice import InlineNotice
@@ -63,385 +51,6 @@ from frontend.views.widgets.panel import Panel
 from frontend.views.widgets.pill_badge_delegate import PillBadgeDelegate
 from frontend.views.widgets.table_utils import chuan_hoa_bang
 from frontend.workers.request_worker import RequestWorker
-
-_HEADERS = (
-    "Mã phiên",
-    "Thời gian",
-    "Điểm số",
-    "Xếp loại",
-    "Tổng lỗi",
-    "Nghiêm trọng (C / H)",
-    "Khác (M / L)",
-)
-
-_format_datetime = format_datetime
-
-
-def _format_short_date(raw_dt: Any) -> str:
-    """Định dạng ngày ngắn dd/MM cho biểu đồ."""
-    if not raw_dt:
-        return ""
-    full_str = _format_datetime(raw_dt)
-    if " " in full_str:
-        return full_str.split(" ")[0]
-    return full_str
-
-
-def _parse_summary(summary_data: Any) -> dict[str, Any]:
-    """Phân tích trường summary sang dictionary an toàn."""
-    if isinstance(summary_data, dict):
-        return summary_data
-    if isinstance(summary_data, str) and summary_data.strip():
-        try:
-            parsed = json.loads(summary_data)
-            if isinstance(parsed, dict):
-                return parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return {}
-
-
-def _get_severity_counts(session: dict[str, Any]) -> tuple[int, int, int, int]:
-    """Trích xuất bộ (Critical, High, Medium, Low) từ session."""
-    summary = _parse_summary(session.get("summary"))
-    dist = summary.get("severity_distribution", {})
-
-    crit = int(dist.get("Critical", 0))
-    high = int(dist.get("High", 0))
-    med = int(dist.get("Medium", 0))
-    low = int(dist.get("Low", 0))
-
-    if crit == 0 and high == 0 and session.get("security_issues_count"):
-        high = int(session.get("security_issues_count") or 0)
-
-    return crit, high, med, low
-
-
-def _get_criteria_scores(session: dict[str, Any]) -> dict[str, float]:
-    """Trích xuất điểm số của 5 tiêu chí từ session summary hoặc các chỉ số trực tiếp."""
-    summary = _parse_summary(session.get("summary"))
-    scores = summary.get("criteria_scores", {})
-
-    return {
-        "complexity": float(
-            scores.get("complexity") or session.get("maintainability_index") or 0.0
-        ),
-        "security": float(scores.get("security") or 0.0),
-        "pylint": float(scores.get("pylint") or session.get("pylint_score") or 0.0),
-        "health": float(scores.get("health") or 0.0),
-        "dependency": float(scores.get("dependency") or 0.0),
-    }
-
-
-class HistoryTableModel(QAbstractTableModel):
-    """
-    Model dữ liệu hiển thị danh sách các phiên quét trong lịch sử.
-
-    Bao gồm 7 cột:
-    0: Mã phiên (#ID)
-    1: Thời gian (dd/MM/yyyy HH:mm)
-    2: Điểm số (ví dụ: 79.3 / 100)
-    3: Xếp loại (A, B, C, D, F kèm màu GRADE_*)
-    4: Tổng lỗi
-    5: Nghiêm trọng (C: X | H: Y)
-    6: Khác (M: X | L: Y)
-    """
-
-    def __init__(self, sessions: list[dict[str, Any]] | None = None) -> None:
-        super().__init__()
-        self._sessions: list[dict[str, Any]] = []
-        self._font_code: QFont = lay_font_code(11)
-        if sessions:
-            self.set_sessions(sessions)
-
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # pylint: disable=invalid-name
-        """Số dòng trong bảng dữ liệu."""
-        if parent.isValid():
-            return 0
-        return len(self._sessions)
-
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # pylint: disable=invalid-name
-        """Số lượng 7 cột dữ liệu lịch sử."""
-        return 0 if parent.isValid() else len(_HEADERS)
-
-    def headerData(  # pylint: disable=invalid-name
-        self,
-        section: int,
-        orientation: Qt.Orientation,
-        role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:
-        """Cung cấp tiêu đề cột theo phương ngang."""
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            if 0 <= section < len(_HEADERS):
-                return _HEADERS[section]
-        return None
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        """Cung cấp nội dung, màu sắc, phông chữ và căn lề cho các ô."""
-        if not index.isValid() or not 0 <= index.row() < len(self._sessions):
-            return None
-
-        session = self._sessions[index.row()]
-        col = index.column()
-        result: Any = None
-
-        if role == Qt.ItemDataRole.DisplayRole:
-            result = self._get_display_data(session, col)
-        elif role == Qt.ItemDataRole.ForegroundRole:
-            result = self._get_foreground_color(session, col)
-        elif role == Qt.ItemDataRole.FontRole and col in (0, 5, 6):
-            result = self._font_code
-        elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col in (2, 4):
-                result = int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            elif col in (0, 3, 5, 6):
-                result = int(Qt.AlignmentFlag.AlignCenter)
-        elif role == Qt.ItemDataRole.UserRole:
-            result = session
-
-        return result
-
-    @staticmethod
-    def _get_display_data(session: dict[str, Any], col: int) -> str:
-        """Trích xuất nội dung văn bản hiển thị theo cột."""
-        crit, high, med, low = _get_severity_counts(session)
-
-        extractors = (
-            lambda s: f"#{s.get('id', '—')}",
-            lambda s: _format_datetime(s.get("started_at") or s.get("completed_at")),
-            lambda s: (
-                f"{float(s['total_score']):.1f} / 100" if s.get("total_score") is not None else "—"
-            ),
-            lambda s: str(s.get("grade") or "—").upper(),
-            lambda s: str(s.get("total_issues") if s.get("total_issues") is not None else 0),
-            lambda _s: f"C: {crit} | H: {high}",
-            lambda _s: f"M: {med} | L: {low}",
-        )
-        if 0 <= col < len(extractors):
-            return extractors[col](session)
-        return ""
-
-    @staticmethod
-    def _get_foreground_color(session: dict[str, Any], col: int) -> QColor | None:
-        """Cung cấp màu sắc chữ trực quan theo xếp loại hoặc mức độ nghiêm trọng."""
-        if col == 3:
-            grade = str(session.get("grade") or "").upper()
-            return QColor(GRADE_COLORS.get(grade, TEXT_MAIN))
-        if col == 5:
-            crit, high, _, _ = _get_severity_counts(session)
-            if crit > 0:
-                return QColor(SEV_CRITICAL)
-            if high > 0:
-                return QColor(SEV_HIGH)
-            return QColor(TEXT_MUTED)
-        return None
-
-    def set_sessions(self, sessions: list[dict[str, Any]]) -> None:
-        """Nạp danh sách phiên quét mới và tự động sắp xếp mới nhất lên đầu."""
-        self.beginResetModel()
-        self._sessions = list(sessions)
-        self._sessions.sort(
-            key=lambda item: (
-                str(item.get("started_at") or item.get("completed_at") or ""),
-                int(item.get("id") or 0),
-            ),
-            reverse=True,
-        )
-        self.endResetModel()
-
-    def get_sessions(self) -> list[dict[str, Any]]:
-        """Lấy danh sách phiên quét hiện tại."""
-        return list(self._sessions)
-
-    def get_session(self, row: int) -> dict[str, Any] | None:
-        """Lấy bản ghi phiên quét tại vị trí chỉ định."""
-        if 0 <= row < len(self._sessions):
-            return self._sessions[row]
-        return None
-
-    def remove_session(self, session_id: int) -> bool:
-        """Xóa một phiên quét khỏi model theo session_id."""
-        for row_idx, item in enumerate(self._sessions):
-            if item.get("id") == session_id:
-                self.beginRemoveRows(QModelIndex(), row_idx, row_idx)
-                self._sessions.pop(row_idx)
-                self.endRemoveRows()
-                return True
-        return False
-
-
-def _format_delta(diff: float) -> tuple[str, QColor]:
-    """Tạo chuỗi ký tự hiển thị độ lệch kèm màu sắc trực quan."""
-    if diff > 0.001:
-        return f"▲ +{diff:.2f}", QColor(GRADE_A)
-    if diff < -0.001:
-        return f"▼ {diff:.2f}", QColor(GRADE_F)
-    return "— 0.00", QColor(TEXT_MUTED)
-
-
-class ComparisonDialog(QDialog):  # pylint: disable=too-few-public-methods
-    """
-    Hộp thoại đối chiếu kết quả chi tiết giữa hai phiên quét được chọn.
-
-    Hiển thị độ lệch delta theo từng tiêu chí kèm mũi tên chỉ hướng và màu sắc.
-    """
-
-    def __init__(
-        self,
-        session_a: dict[str, Any],
-        session_b: dict[str, Any],
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("So sánh kết quả giữa hai phiên phân tích")
-        self.setModal(True)
-        self.resize(680, 420)
-
-        # Xác định phiên cũ hơn và phiên mới hơn dựa theo thời gian/ID
-        self.old_sess, self.new_sess = self._order_sessions(session_a, session_b)
-        self._init_ui()
-
-    @staticmethod
-    def _order_sessions(
-        s1: dict[str, Any],
-        s2: dict[str, Any],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Phân loại phiên quét cũ hơn và mới hơn."""
-        t1 = str(s1.get("started_at") or s1.get("completed_at") or "")
-        t2 = str(s2.get("started_at") or s2.get("completed_at") or "")
-        if t1 and t2 and t1 < t2:
-            return s1, s2
-        if s1.get("id", 0) < s2.get("id", 0):
-            return s1, s2
-        return s2, s1
-
-    def _init_ui(self) -> None:
-        """Xây dựng bảng đối chiếu và nút đóng."""
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 18, 20, 18)
-        main_layout.setSpacing(14)
-
-        desc_lbl = QLabel(
-            "Đối chiếu điểm số các tiêu chí chất lượng mã nguồn giữa hai lần kiểm định:"
-        )
-        desc_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        main_layout.addWidget(desc_lbl)
-
-        table = self._build_comparison_table()
-        main_layout.addWidget(table, 1)
-
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-
-        btn_close = QPushButton("Đóng")
-        btn_close.setProperty("role", "primary")
-        btn_close.clicked.connect(self.accept)
-
-        shortcut_esc = QShortcut(QKeySequence("Esc"), self)
-        shortcut_esc.activated.connect(self.accept)
-
-        shortcut_enter = QShortcut(QKeySequence("Return"), self)
-        shortcut_enter.activated.connect(self.accept)
-
-        btn_layout.addWidget(btn_close)
-        main_layout.addLayout(btn_layout)
-
-    def _get_comparison_headers(self) -> list[str]:
-        """Tạo danh sách tiêu đề 4 cột cho bảng so sánh."""
-        old_id = self.old_sess.get("id", "—")
-        new_id = self.new_sess.get("id", "—")
-        old_dt = _format_datetime(
-            self.old_sess.get("started_at") or self.old_sess.get("completed_at")
-        )
-        new_dt = _format_datetime(
-            self.new_sess.get("started_at") or self.new_sess.get("completed_at")
-        )
-        return [
-            "Tiêu chí đánh giá",
-            f"Phiên cũ (#{old_id} · {old_dt})",
-            f"Phiên mới (#{new_id} · {new_dt})",
-            "Độ lệch (Δ)",
-        ]
-
-    def _build_comparison_table(self) -> QTableWidget:
-        """Tạo bảng đối chiếu 6 dòng x 4 cột."""
-        headers = self._get_comparison_headers()
-        table = QTableWidget(6, 4)
-        table.setHorizontalHeaderLabels(headers)
-        table.verticalHeader().setVisible(False)
-        table.setAlternatingRowColors(True)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-
-        header_view = table.horizontalHeader()
-        header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i in range(1, 4):
-            header_view.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-
-        old_scores = _get_criteria_scores(self.old_sess)
-        new_scores = _get_criteria_scores(self.new_sess)
-
-        criteria_keys = ["complexity", "security", "pylint", "health", "dependency"]
-        for row, key in enumerate(criteria_keys):
-            v_old = old_scores.get(key, 0.0)
-            v_new = new_scores.get(key, 0.0)
-            self._fill_comparison_row(
-                table,
-                row,
-                TEN_TIEU_CHI.get(key, key),
-                (f"{v_old:.1f}", f"{v_new:.1f}"),
-                v_new - v_old,
-            )
-
-        self._fill_total_row(table)
-        return table
-
-    def _fill_total_row(self, table: QTableWidget) -> None:
-        """Điền dòng điểm tổng kết."""
-        tot_old = float(self.old_sess.get("total_score") or 0.0)
-        tot_new = float(self.new_sess.get("total_score") or 0.0)
-        grd_old = str(self.old_sess.get("grade") or "—").upper()
-        grd_new = str(self.new_sess.get("grade") or "—").upper()
-        self._fill_comparison_row(
-            table,
-            5,
-            "Điểm tổng kết",
-            (f"{tot_old:.1f} ({grd_old})", f"{tot_new:.1f} ({grd_new})"),
-            tot_new - tot_old,
-        )
-
-    @staticmethod
-    def _fill_comparison_row(
-        table: QTableWidget,
-        row: int,
-        name: str,
-        texts: tuple[str, str],
-        diff: float,
-    ) -> None:
-        """Điền dữ liệu đối chiếu và định dạng độ lệch màu sắc cho từng dòng."""
-        delta_str, delta_color = _format_delta(diff)
-
-        item_name = QTableWidgetItem(name)
-        item_old = QTableWidgetItem(texts[0])
-        item_new = QTableWidgetItem(texts[1])
-        item_delta = QTableWidgetItem(delta_str)
-
-        align_r = int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        item_old.setTextAlignment(align_r)
-        item_new.setTextAlignment(align_r)
-        item_delta.setTextAlignment(align_r)
-        item_delta.setForeground(delta_color)
-
-        if row == 5:
-            font = item_name.font()
-            font.setBold(True)
-            for itm in (item_name, item_old, item_new, item_delta):
-                itm.setFont(font)
-
-        table.setItem(row, 0, item_name)
-        table.setItem(row, 1, item_old)
-        table.setItem(row, 2, item_new)
-        table.setItem(row, 3, item_delta)
 
 
 def _extract_trend_data(
