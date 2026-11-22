@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from ._base import execute_many, execute_write, fetch_all, fetch_one
+from ._base import execute_many, execute_write, fetch_all
 
 
 def _validate_weight(weight: float) -> None:
@@ -25,16 +25,6 @@ def get_all_configs(active_only: bool = False) -> list[dict[str, Any]]:
         ORDER BY id ASC
     """
     return fetch_all(sql_active if active_only else sql_all)
-
-
-def get_config_by_key(metric_key: str) -> Optional[dict[str, Any]]:
-    """Lấy thông tin cấu hình trọng số theo metric_key."""
-    sql = """
-        SELECT id, metric_key, metric_name, weight, description, is_active, updated_at
-        FROM scoring_config
-        WHERE metric_key = %s
-    """
-    return fetch_one(sql, (metric_key,))
 
 
 def update_weight(

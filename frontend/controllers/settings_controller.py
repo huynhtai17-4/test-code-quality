@@ -14,8 +14,37 @@ class SettingsController(BaseController):
     """Điều phối toàn bộ logic gọi API và cấu hình cho màn hình Cài đặt (SettingsView)."""
 
     ping_result = pyqtSignal(bool, str)
+    ai_health_result = pyqtSignal(bool, str)
     configs_loaded = pyqtSignal(list)
     configs_saved = pyqtSignal(bool, str)
+
+    def check_ai_health(self, endpoint: str | None = None) -> None:
+        """Kiểm tra tình trạng hoạt động của dịch vụ DeepSeek AI."""
+        def _do_check() -> dict[str, Any]:
+            return api.check_ai_health(endpoint)
+
+        def _on_success(response: dict[str, Any]) -> None:
+            data = response.get("data", {})
+            available = bool(data.get("available", False))
+            mode = data.get("mode", "unknown")
+            msg = data.get("message", "")
+            if available:
+                self.ai_health_result.emit(True, f"● Sẵn sàng ({mode}): {msg}")
+                self.status_message.emit("Dịch vụ DeepSeek AI sẵn sàng.")
+            else:
+                self.ai_health_result.emit(False, f"● Không khả dụng ({mode}): {msg}")
+                self.status_message.emit("Dịch vụ DeepSeek AI không khả dụng.")
+
+        def _on_error(error_msg: str) -> None:
+            self.ai_health_result.emit(False, f"● Lỗi kiểm tra AI: {error_msg}")
+            self.status_message.emit("Không thể kết nối máy chủ AI.")
+
+        self._execute_async(
+            task_fn=_do_check,
+            on_success=_on_success,
+            on_error=_on_error,
+            loading_status="Đang kiểm tra kết nối DeepSeek AI...",
+        )
 
     def ping_server(self, host: str, port: int) -> None:
         """Kiểm tra khả năng kết nối tới Socket Server Backend."""

@@ -30,6 +30,7 @@ from backend.database.repositories import (
     project_repo,
     session_repo,
 )
+from backend.services import ai_service
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,9 @@ def _convert_issues_for_db(raw_issues: list[dict[str, Any]]) -> list[dict[str, A
             "message": str(item.get("message", "")),
             "status": item.get("status", "open"),
             "note": item.get("note"),
+            "ai_analysis": item.get("ai_analysis"),
+            "ai_triage": item.get("ai_triage"),
+            "ai_patch": item.get("ai_patch"),
         })
     return db_issues
 
@@ -148,7 +152,7 @@ def _run_analyzers(
     return radon_data, pylint_data, bandit_data, audit_data, health_data, flake8_data, malware_data
 
 
-def _perform_scan_and_aggregation(
+def _perform_scan_and_aggregation(  # pylint: disable=too-many-locals
     working_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Chạy quét các bộ công cụ, tổng hợp kết quả và tính điểm."""
@@ -189,6 +193,25 @@ def _perform_scan_and_aggregation(
     aggregated["total_files"] = total_files
     aggregated["total_loc"] = total_loc
 
+    session_summary = {
+        "total_score": float(score_res["total_score"]),
+        "quality_score": float(score_res.get("quality_score", score_res["total_score"])),
+        "security_score": float(score_res.get("security_score", score_res["total_score"])),
+        "grade": str(score_res["grade"]),
+        "criteria_scores": score_res["criteria_scores"],
+        "severity_distribution": aggregated.get("severity_distribution", {}),
+        "total_files": total_files,
+        "total_loc": total_loc,
+        "total_issues": int(aggregated.get("total_issues_count", 0)),
+    }
+    all_issues = aggregated.get("all_issues", [])
+    session_review, enriched_issues = ai_service.enrich_session_single_batch(
+        session_summary=session_summary,
+        issues=all_issues,
+    )
+    aggregated["all_issues"] = enriched_issues
+    aggregated["session_review"] = session_review
+
     return aggregated, score_res, pylint_data
 
 
@@ -212,9 +235,12 @@ def _persist_results(
         "criteria_scores": criteria,
         "severity_distribution": severity_dist,
         "top_risk_files": aggregated.get("top_risk_files", []),
+        "file_summary": aggregated.get("file_summary", []),
         "weights_used": score_res.get("weights_used", {}),
         "total_files": aggregated.get("total_files", len(aggregated.get("file_summary", []))),
-        "total_loc": aggregated.get("total_loc", 0),
+        "total_loc": int(aggregated.get("total_loc", 0)),
+        "total_issues": int(aggregated.get("total_issues_count", 0)),
+        "session_review": aggregated.get("session_review", {}),
     }
     summary_json = json.dumps(summary_payload, ensure_ascii=False)
 
@@ -228,6 +254,7 @@ def _persist_results(
 
     metric_update = {
         "total_files": len(aggregated.get("file_summary", [])),
+        "total_loc": int(aggregated.get("total_loc", 0)),
         "total_issues": int(aggregated.get("total_issues_count", 0)),
         "maintainability_index": criteria.get("complexity"),
         "pylint_score": (
@@ -313,6 +340,7 @@ def run_project_analysis(
                 "total_issues": int(aggregated.get("total_issues_count", 0)),
                 "total_files": aggregated.get("total_files", len(aggregated.get("file_summary", []))),
                 "total_loc": int(aggregated.get("total_loc", 0)),
+                "session_review": aggregated.get("session_review", {}),
             }
 
         finally:

@@ -72,3 +72,9 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+# AI & Browser Sessions
+.browser_profile/
+*.browser_profile/
+.ai_cache.json
+*.ai_cache.json

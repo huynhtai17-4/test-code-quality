@@ -126,3 +126,38 @@ def handle_create_issue(data: dict[str, Any]) -> dict[str, Any]:
         return success_response({"issue_id": new_issue_id})
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return error_response(f"Lỗi khi tạo lỗi thủ công: {exc}")
+
+
+def handle_explain_issue(data: dict[str, Any]) -> dict[str, Any]:
+    """Phân tích giải thích và đề xuất sửa lỗi bằng AI cho một issue cụ thể."""
+    try:
+        issue_id = parse_positive_int(data.get("issue_id"), "issue_id")
+        issue = issue_repo.get_issue_by_id(issue_id)
+        if not issue:
+            return error_response(f"Không tìm thấy lỗi với ID #{issue_id}")
+
+        from backend.services.ai_service import explain_single_issue  # pylint: disable=import-outside-toplevel
+        ai_result = explain_single_issue(issue)
+        ai_analysis = ai_result.get("ai_analysis", "")
+        ai_triage = ai_result.get("ai_triage", "confirmed_risk")
+        ai_patch = ai_result.get("ai_patch", "")
+
+        issue_repo.update_issue_ai(issue_id, ai_analysis, ai_triage, ai_patch)
+        issue["ai_analysis"] = ai_analysis
+        issue["ai_triage"] = ai_triage
+        issue["ai_patch"] = ai_patch
+
+        return success_response(issue)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return error_response(f"Lỗi khi giải thích lỗi bằng AI: {exc}")
+
+
+def handle_check_ai_health(data: dict[str, Any]) -> dict[str, Any]:
+    """Kiểm tra tình trạng hoạt động của máy chủ DeepSeek AI Proxy."""
+    try:
+        from backend.services.ai_service import check_ai_health  # pylint: disable=import-outside-toplevel
+        endpoint = data.get("endpoint")
+        res = check_ai_health(endpoint)
+        return success_response(res)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return error_response(f"Lỗi kiểm tra máy chủ AI: {exc}")

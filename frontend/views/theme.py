@@ -9,28 +9,18 @@ from PyQt6.QtWidgets import QApplication, QToolTip  # pylint: disable=no-name-in
 from frontend.charts.style import TEN_TIEU_CHI
 
 # ── 1. Nền & Chữ ──────────────────────────────────────────────────
-WINDOW_BG: str = "#F3F5F8"
 SURFACE: str = "#FFFFFF"
 SURFACE_ALT: str = "#F5F6F8"
-HEADER_BG: str = "#FAFBFC"
-ROW_HOVER: str = "#F6F8FB"
 BORDER: str = "#D3D8DF"
-BORDER_PANEL: str = "#DDE2E9"
 BORDER_SOFT: str = "#EEF0F4"
 TEXT_MAIN: str = "#1D232B"
 TEXT_MUTED: str = "#5B6573"
 
 # ── 2. Sidebar ─────────────────────────────────────────────────────
-SIDEBAR_BG: str = "#222B36"
-SIDEBAR_TEXT: str = "#B9C2CE"
-SIDEBAR_ACTIVE_BG: str = "#2F3A48"
-SIDEBAR_ACTIVE_TEXT: str = "#FFFFFF"
 SIDEBAR_WIDTH: int = 188
 
 # ── 3. Accent ──────────────────────────────────────────────────────
 ACCENT: str = "#1F5FA8"
-ACCENT_HOVER: str = "#194F8C"
-ACCENT_SOFT: str = "#E8F0FA"
 
 # ── 4. Mức nghiêm trọng ───────────────────────────────────────────
 SEV_CRITICAL: str = "#B42318"
@@ -206,24 +196,14 @@ def format_datetime(raw_dt: Any) -> str:
 
 
 __all__ = [
-    "WINDOW_BG",
     "SURFACE",
     "SURFACE_ALT",
-    "HEADER_BG",
-    "ROW_HOVER",
     "BORDER",
-    "BORDER_PANEL",
     "BORDER_SOFT",
     "TEXT_MAIN",
     "TEXT_MUTED",
-    "SIDEBAR_BG",
-    "SIDEBAR_TEXT",
-    "SIDEBAR_ACTIVE_BG",
-    "SIDEBAR_ACTIVE_TEXT",
     "SIDEBAR_WIDTH",
     "ACCENT",
-    "ACCENT_HOVER",
-    "ACCENT_SOFT",
     "SEV_CRITICAL",
     "SEV_HIGH",
     "SEV_MEDIUM",

@@ -11,6 +11,7 @@ from PyQt6.QtGui import (  # pylint: disable=no-name-in-module
     QTextFormat,
 )
 from PyQt6.QtWidgets import (  # pylint: disable=no-name-in-module
+    QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -49,6 +50,7 @@ class IssueDetailPanel(QFrame):
     """
 
     save_note_requested = pyqtSignal(int, str, object)
+    explain_requested = pyqtSignal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -68,6 +70,12 @@ class IssueDetailPanel(QFrame):
         self.lbl_detail_rule = QLabel("—")
         self.txt_detail_desc = QTextEdit()
         self.txt_code_snippet = QPlainTextEdit()
+        self.ai_container: QFrame | None = None
+        self.lbl_ai_triage = QLabel("")
+        self.txt_ai_analysis = QTextEdit()
+        self.txt_ai_patch = QPlainTextEdit()
+        self.btn_copy_patch = QPushButton("Sao chép mã sửa")
+        self.btn_explain_ai = QPushButton("Phân tích bằng DeepSeek")
         self.combo_detail_status = QComboBox()
         self.edit_detail_note = QLineEdit()
         self.btn_save_note = QPushButton("Lưu ghi chú")
@@ -147,6 +155,8 @@ class IssueDetailPanel(QFrame):
         self.txt_code_snippet.setVisible(False)
         layout.addWidget(self.txt_code_snippet, 1)
 
+        layout.addWidget(self._create_ai_block(form_widget))
+
         # Thanh cập nhật trạng thái & ghi chú
         status_bar_layout = QHBoxLayout()
         status_bar_layout.setSpacing(8)
@@ -173,6 +183,65 @@ class IssueDetailPanel(QFrame):
 
         layout.addLayout(status_bar_layout)
         return form_widget
+
+    def _create_ai_block(self, parent: QWidget) -> QWidget:
+        """Tạo khối thẩm định & đề xuất sửa lỗi từ DeepSeek AI."""
+        self.ai_container = QFrame(parent)
+        self.ai_container.setObjectName("AiDetailBox")
+        self.ai_container.setStyleSheet(
+            f"QFrame#AiDetailBox {{ background-color: {SURFACE_ALT}; border: 1px solid {BORDER_SOFT}; "
+            f"border-radius: 4px; padding: 4px; }}"
+        )
+        ai_layout = QVBoxLayout(self.ai_container)
+        ai_layout.setContentsMargins(8, 6, 8, 6)
+        ai_layout.setSpacing(6)
+
+        ai_header = QHBoxLayout()
+        ai_title = QLabel("Thẩm định & Đề xuất sửa (DeepSeek AI):")
+        ai_title.setStyleSheet(f"font-weight: 600; font-size: 12px; color: {TEXT_MAIN}; border: none;")
+        self.lbl_ai_triage.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {TEXT_MUTED}; border: none;")
+        ai_header.addWidget(ai_title)
+        ai_header.addWidget(self.lbl_ai_triage)
+        ai_header.addStretch()
+
+        self.btn_copy_patch.setFixedHeight(26)
+        self.btn_copy_patch.clicked.connect(self._on_copy_patch_clicked)
+        ai_header.addWidget(self.btn_copy_patch)
+
+        self.btn_explain_ai.setFixedHeight(26)
+        self.btn_explain_ai.clicked.connect(self._on_explain_clicked)
+        ai_header.addWidget(self.btn_explain_ai)
+        ai_layout.addLayout(ai_header)
+
+        self.txt_ai_analysis.setReadOnly(True)
+        self.txt_ai_analysis.setStyleSheet("QTextEdit { border: none; background: transparent; font-size: 12px; }")
+        self.txt_ai_analysis.setMaximumHeight(50)
+        ai_layout.addWidget(self.txt_ai_analysis)
+
+        self.txt_ai_patch.setReadOnly(True)
+        self.txt_ai_patch.setFont(lay_font_code(11))
+        self.txt_ai_patch.setMaximumHeight(65)
+        self.txt_ai_patch.setStyleSheet(
+            f"QPlainTextEdit {{ background-color: {SURFACE}; border: 1px solid {BORDER_SOFT}; border-radius: 3px; }}"
+        )
+        ai_layout.addWidget(self.txt_ai_patch)
+        return self.ai_container
+
+    def _on_copy_patch_clicked(self) -> None:
+        """Sao chép đoạn mã sửa lỗi do AI đề xuất vào clipboard."""
+        patch_text = self.txt_ai_patch.toPlainText().strip()
+        if patch_text:
+            clipboard = QApplication.clipboard()
+            if clipboard:
+                clipboard.setText(patch_text)
+
+    def _on_explain_clicked(self) -> None:
+        """Gửi tín hiệu yêu cầu DeepSeek AI phân tích lỗi hiện tại."""
+        if not self._selected_issue:
+            return
+        raw_id = self._selected_issue.get("id") or self._selected_issue.get("issue_id")
+        if raw_id:
+            self.explain_requested.emit(int(raw_id))
 
     def _on_save_clicked(self) -> None:
         """Phát tín hiệu yêu cầu lưu ghi chú lên màn hình cha."""
@@ -237,6 +306,39 @@ class IssueDetailPanel(QFrame):
         note_text = str(issue.get("note") or "")
         self.edit_detail_note.setText(note_text)
 
+        self._display_ai_info(issue)
+
+    def _display_ai_info(self, issue: dict[str, Any]) -> None:
+        """Cập nhật giao diện thẩm định và bản vá DeepSeek AI."""
+        ai_analysis = str(issue.get("ai_analysis") or "").strip()
+        ai_triage = str(issue.get("ai_triage") or "").strip()
+        ai_patch = str(issue.get("ai_patch") or "").strip()
+
+        if ai_analysis:
+            triage_label = "Rủi ro xác nhận" if ai_triage == "confirmed_risk" else "Nghi ngờ báo giả"
+            self.lbl_ai_triage.setText(f"· Đánh giá: {triage_label}")
+            self.txt_ai_analysis.setPlainText(ai_analysis)
+            self.txt_ai_analysis.setVisible(True)
+            self.btn_explain_ai.setVisible(False)
+            if ai_patch:
+                self.txt_ai_patch.setPlainText(ai_patch)
+                self.txt_ai_patch.setVisible(True)
+                self.btn_copy_patch.setVisible(True)
+            else:
+                self.txt_ai_patch.clear()
+                self.txt_ai_patch.setVisible(False)
+                self.btn_copy_patch.setVisible(False)
+        else:
+            self.lbl_ai_triage.setText("· Chưa thẩm định")
+            self.txt_ai_analysis.setPlainText(
+                "Nhấn 'Phân tích bằng DeepSeek' để AI giải thích nguyên nhân và đề xuất mã sửa."
+            )
+            self.txt_ai_analysis.setVisible(True)
+            self.txt_ai_patch.clear()
+            self.txt_ai_patch.setVisible(False)
+            self.btn_copy_patch.setVisible(False)
+            self.btn_explain_ai.setVisible(True)
+
     def _display_code_snippet(self, snippet_raw: Any, target_line: int) -> None:
         """Hiển thị đoạn trích mã nguồn có số dòng và tô màu đỏ nhạt dòng lỗi."""
         self.txt_code_snippet.clear()
@@ -282,5 +384,11 @@ class IssueDetailPanel(QFrame):
         self.txt_detail_desc.clear()
         self.txt_code_snippet.clear()
         self.txt_code_snippet.setVisible(False)
+        self.lbl_ai_triage.setText("")
+        self.txt_ai_analysis.clear()
+        self.txt_ai_patch.clear()
+        self.txt_ai_patch.setVisible(False)
+        self.btn_copy_patch.setVisible(False)
+        self.btn_explain_ai.setVisible(False)
         self.edit_detail_note.clear()
         self._detail_stack.setCurrentIndex(0)

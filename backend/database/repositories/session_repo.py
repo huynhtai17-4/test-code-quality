@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from ._base import execute_insert, execute_write, fetch_all, fetch_one
+from ._base import execute_insert, execute_write, fetch_all
 
 VALID_SESSION_STATUSES = frozenset({"pending", "running", "completed", "failed"})
 _ALLOWED_METRIC_FIELDS = frozenset({
@@ -109,17 +109,6 @@ def update_session_results(
     return execute_write(sql, params) > 0
 
 
-def get_session_by_id(session_id: int) -> Optional[dict[str, Any]]:
-    """Lấy thông tin chi tiết một phiên quét theo ID."""
-    sql = """
-        SELECT s.*, p.name AS project_name, p.path AS project_path
-        FROM analysis_sessions AS s
-        INNER JOIN projects AS p ON p.id = s.project_id
-        WHERE s.id = %s
-    """
-    return fetch_one(sql, (session_id,))
-
-
 def get_sessions_by_project(project_id: int, limit: int = 50) -> list[dict[str, Any]]:
     """Truy vấn lịch sử các phiên quét của một dự án theo thứ tự mới nhất."""
     sql = """
@@ -133,20 +122,6 @@ def get_sessions_by_project(project_id: int, limit: int = 50) -> list[dict[str, 
         LIMIT %s
     """
     return fetch_all(sql, (project_id, limit))
-
-
-def get_recent_sessions(limit: int = 20) -> list[dict[str, Any]]:
-    """Truy vấn danh sách các phiên quét gần nhất trên toàn hệ thống."""
-    sql = """
-        SELECT s.id, s.project_id, p.name AS project_name, s.status,
-               s.total_files, s.total_issues, s.total_score, s.grade,
-               s.started_at, s.completed_at
-        FROM analysis_sessions AS s
-        INNER JOIN projects AS p ON p.id = s.project_id
-        ORDER BY s.started_at DESC, s.id DESC
-        LIMIT %s
-    """
-    return fetch_all(sql, (limit,))
 
 
 def delete_session(session_id: int) -> bool:

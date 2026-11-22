@@ -241,8 +241,11 @@ class IssueTableModel(QAbstractTableModel):
         issue_id: int,
         status: str | None = None,
         note: str | None = None,
+        ai_analysis: str | None = None,
+        ai_triage: str | None = None,
+        ai_patch: str | None = None,
     ) -> bool:
-        """Cập nhật trường trạng thái hoặc ghi chú của lỗi theo ID."""
+        """Cập nhật trường trạng thái, ghi chú hoặc thông tin AI của lỗi theo ID."""
         for row_idx, item in enumerate(self._issues):
             curr_id = item.get("id") if item.get("id") is not None else item.get("issue_id")
             if curr_id == issue_id:
@@ -250,6 +253,12 @@ class IssueTableModel(QAbstractTableModel):
                     item["status"] = _normalize_status(status)
                 if note is not None:
                     item["note"] = note
+                if ai_analysis is not None:
+                    item["ai_analysis"] = ai_analysis
+                if ai_triage is not None:
+                    item["ai_triage"] = ai_triage
+                if ai_patch is not None:
+                    item["ai_patch"] = ai_patch
                 top_left = self.index(row_idx, 0)
                 bottom_right = self.index(row_idx, len(_HEADERS) - 1)
                 self.dataChanged.emit(top_left, bottom_right)

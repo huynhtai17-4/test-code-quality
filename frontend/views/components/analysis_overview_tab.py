@@ -41,6 +41,11 @@ class AnalysisOverviewTab(QWidget):
         self._lbl_loc = QLabel("—", self)
         self._lbl_issues = QLabel("—", self)
 
+        self._lbl_ai_overview = QLabel("Chưa có nhận xét từ AI.", self)
+        self._lbl_ai_verdict = QLabel("", self)
+        self._lbl_ai_actions = QLabel("", self)
+        self.ai_review_card: QFrame | None = None
+
         self._init_ui()
 
     def _init_ui(self) -> None:
@@ -51,6 +56,7 @@ class AnalysisOverviewTab(QWidget):
 
         v_layout.addLayout(self._create_severity_row())
         v_layout.addLayout(self._create_metrics_row())
+        v_layout.addWidget(self._create_ai_review_card())
 
         jump_bar = QHBoxLayout()
         jump_bar.addStretch()
@@ -137,10 +143,14 @@ class AnalysisOverviewTab(QWidget):
 
     def update_severity_labels(self, sev_dist: dict[str, int]) -> None:
         """Cập nhật số lượng lỗi cho 4 mức độ Critical, High, Medium, Low."""
-        self._lbl_crit_cnt.setText(str(sev_dist.get("Critical", 0)))
-        self._lbl_high_cnt.setText(str(sev_dist.get("High", 0)))
-        self._lbl_med_cnt.setText(str(sev_dist.get("Medium", 0)))
-        self._lbl_low_cnt.setText(str(sev_dist.get("Low", 0)))
+        crit = int(sev_dist.get("Critical") or sev_dist.get("critical") or 0)
+        high = int(sev_dist.get("High") or sev_dist.get("high") or 0)
+        med = int(sev_dist.get("Medium") or sev_dist.get("medium") or 0)
+        low = int(sev_dist.get("Low") or sev_dist.get("low") or 0)
+        self._lbl_crit_cnt.setText(str(crit))
+        self._lbl_high_cnt.setText(str(high))
+        self._lbl_med_cnt.setText(str(med))
+        self._lbl_low_cnt.setText(str(low))
 
     def update_overview_counts(
         self,
@@ -156,3 +166,59 @@ class AnalysisOverviewTab(QWidget):
     def get_display_stats(self) -> tuple[str, str, str]:
         """Lấy giá trị chuỗi hiển thị tệp tin, LOC và tổng lỗi."""
         return self._lbl_files.text(), self._lbl_loc.text(), self._lbl_issues.text()
+
+    def _create_ai_review_card(self) -> QWidget:
+        """Tạo khối hiển thị nhận định tổng hợp và lộ trình khắc phục của DeepSeek AI."""
+        card = QFrame(self)
+        card.setObjectName("AiReviewCard")
+        card.setStyleSheet(
+            f"QFrame#AiReviewCard {{ background-color: {SURFACE};"
+            f" border: 1px solid {BORDER_SOFT}; border-radius: 6px; }}"
+            f"QLabel {{ border: none; background: transparent; }}"
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(8)
+
+        lbl_header = QLabel("Đánh giá tổng hợp & Lộ trình khắc phục (DeepSeek AI)", card)
+        lbl_header.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {TEXT_MAIN};")
+        layout.addWidget(lbl_header)
+
+        self._lbl_ai_overview.setWordWrap(True)
+        self._lbl_ai_overview.setStyleSheet(f"font-size: 12px; color: {TEXT_MAIN};")
+        layout.addWidget(self._lbl_ai_overview)
+
+        self._lbl_ai_verdict.setWordWrap(True)
+        self._lbl_ai_verdict.setStyleSheet(f"font-size: 12px; font-weight: 600; color: {TEXT_MUTED};")
+        layout.addWidget(self._lbl_ai_verdict)
+
+        self._lbl_ai_actions.setWordWrap(True)
+        self._lbl_ai_actions.setStyleSheet(f"font-size: 12px; color: {TEXT_MUTED};")
+        layout.addWidget(self._lbl_ai_actions)
+
+        self.ai_review_card = card
+        return card
+
+    def update_ai_review(self, review: dict[str, Any] | None) -> None:
+        """Cập nhật nội dung nhận xét và đề xuất hành động từ AI."""
+        if not review or not isinstance(review, dict):
+            self._lbl_ai_overview.setText("Chưa có nhận xét từ AI.")
+            self._lbl_ai_verdict.setText("")
+            self._lbl_ai_actions.setText("")
+            return
+
+        overview = str(review.get("overview") or "").strip()
+        verdict = str(review.get("security_verdict") or "").strip()
+        actions = review.get("priority_actions") or []
+
+        self._lbl_ai_overview.setText(overview or "Chưa có nhận xét tổng quan.")
+        if verdict:
+            self._lbl_ai_verdict.setText(f"Nhận định an ninh: {verdict}")
+        else:
+            self._lbl_ai_verdict.setText("")
+
+        if actions and isinstance(actions, list):
+            actions_text = "Lộ trình ưu tiên:\n" + "\n".join(f"• {act}" for act in actions)
+            self._lbl_ai_actions.setText(actions_text)
+        else:
+            self._lbl_ai_actions.setText("")

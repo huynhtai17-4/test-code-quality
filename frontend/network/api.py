@@ -221,3 +221,16 @@ def update_config(
     if isinstance(criterion_or_weights, dict):
         return _call_api("config.update", {"weights": criterion_or_weights})
     return _call_api("config.update", {"criterion": criterion_or_weights, "weight": weight})
+
+
+# =====================================================================
+# 6. TRÍ TUỆ NHÂN TẠO (AI DEEPSEEK)
+# =====================================================================
+def explain_issue(issue_id: int) -> dict[str, Any]:
+    """Yêu cầu AI phân tích chuyên sâu và đề xuất mã sửa cho một lỗi."""
+    return _call_api("ai.explain_issue", {"issue_id": issue_id}, timeout=60.0)
+
+
+def check_ai_health(endpoint: str | None = None) -> dict[str, Any]:
+    """Kiểm tra tình trạng hoạt động của máy chủ DeepSeek Proxy."""
+    return _call_api("ai.health", {"endpoint": endpoint}, timeout=5.0)

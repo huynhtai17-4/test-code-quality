@@ -10,8 +10,9 @@ _STAGES = (
     (15, "Đang nạp cấu trúc thư mục và tệp tin mã nguồn..."),
     (35, "Đang quét lỗ hổng an toàn bảo mật (Bandit)..."),
     (55, "Đang kiểm định độ phức tạp tính toán và bảo trì..."),
-    (75, "Đang kiểm tra thư viện phụ thuộc và cơ sở dữ liệu CVE..."),
-    (90, "Đang tổng hợp điểm số và xếp loại chất lượng..."),
+    (75, "Đang kiểm tra thư viện phụ thuộc và phát hiện mã độc AST..."),
+    (88, "DeepSeek AI đang chủ động thẩm định chất lượng và lộ trình khắc phục..."),
+    (96, "Đang lưu trữ cơ sở dữ liệu và hoàn tất báo cáo kiểm định..."),
 )
 
 

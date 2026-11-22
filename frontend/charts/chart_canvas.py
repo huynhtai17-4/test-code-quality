@@ -209,3 +209,7 @@ class AnalysisChartCanvas(QWidget):
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.error("Lỗi khi xuất ảnh biểu đồ sang base64: %s", exc)
             return ""
+
+    def to_base64_png(self) -> str:
+        """Bí danh cho export_base64_png hỗ trợ tạo báo cáo HTML."""
+        return self.export_base64_png()

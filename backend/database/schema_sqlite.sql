@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS issues (
     message TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',
     note TEXT,
+    ai_analysis TEXT,
+    ai_triage TEXT,
+    ai_patch TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (session_id) REFERENCES analysis_sessions(id) ON DELETE CASCADE

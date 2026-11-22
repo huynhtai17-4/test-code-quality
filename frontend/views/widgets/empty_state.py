@@ -111,6 +111,25 @@ class EmptyState(QWidget):
         self._btn_action = QPushButton("", self)
         self._btn_action.setProperty("role", "primary")
         self._btn_action.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_action.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #0F172A;"
+            "  color: #FFFFFF;"
+            "  border: 1px solid #0F172A;"
+            "  border-radius: 4px;"
+            "  padding: 8px 24px;"
+            "  font-weight: 600;"
+            "  font-size: 13px;"
+            "  min-height: 36px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: #1E293B;"
+            "  border-color: #1E293B;"
+            "}"
+            "QPushButton:pressed {"
+            "  background-color: #020617;"
+            "}"
+        )
         self._btn_action.clicked.connect(self.action_clicked.emit)
         layout.addWidget(self._btn_action, alignment=Qt.AlignmentFlag.AlignCenter)
 

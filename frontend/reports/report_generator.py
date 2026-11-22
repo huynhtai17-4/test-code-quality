@@ -6,14 +6,12 @@ import datetime
 import html
 from typing import Any
 
-from frontend.models.issue_model import _prepare_snippet_lines
-from frontend.views.theme import (
-    GRADE_A,
-    GRADE_B,
-    GRADE_C,
-    GRADE_D,
-    GRADE_F,
-)
+# Bảng mã màu xếp loại báo cáo HTML chuẩn theme
+_GRADE_A = "#1E7A4C"
+_GRADE_B = "#4C8A2E"
+_GRADE_C = "#B38A00"
+_GRADE_D = "#D9622B"
+_GRADE_F = "#B42318"
 
 _CRITERIA_SPECS = (
     (
@@ -52,14 +50,14 @@ _CRITERIA_SPECS = (
 def _get_score_color(score: float) -> str:
     """Trả về mã màu chuẩn theo thang điểm (A-F)."""
     if score >= 90.0:
-        return GRADE_A
+        return _GRADE_A
     if score >= 75.0:
-        return GRADE_B
+        return _GRADE_B
     if score >= 60.0:
-        return GRADE_C
+        return _GRADE_C
     if score >= 40.0:
-        return GRADE_D
-    return GRADE_F
+        return _GRADE_D
+    return _GRADE_F
 
 
 def _get_grade_for_score(score: float) -> str:
@@ -148,6 +146,37 @@ def _render_charts_section(radar_b64: str, risk_b64: str) -> str:
     return charts_section
 
 
+def _prepare_snippet_lines(snippet_raw: Any, target_line: int) -> list[tuple[int, str]]:
+    """Chuẩn hóa code snippet thành danh sách các cặp (số dòng, nội dung hiển thị)."""
+    if isinstance(snippet_raw, str):
+        raw_lines = snippet_raw.splitlines()
+    elif isinstance(snippet_raw, (list, tuple)):
+        raw_lines = list(snippet_raw)
+    elif isinstance(snippet_raw, dict):
+        raw_lines = snippet_raw.get("lines", [])
+        if isinstance(raw_lines, str):
+            raw_lines = raw_lines.splitlines()
+    else:
+        raw_lines = []
+
+    result: list[tuple[int, str]] = []
+    start_line = max(1, target_line - 3) if target_line > 0 else 1
+
+    for idx, item in enumerate(raw_lines):
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            try:
+                ln = int(item[0])
+                txt = str(item[1])
+                result.append((ln, f"{ln} | {txt}"))
+            except (ValueError, TypeError):
+                ln = start_line + idx
+                result.append((ln, f"{ln} | {item[1]}"))
+        else:
+            ln = start_line + idx
+            result.append((ln, f"{ln} | {item}"))
+    return result
+
+
 def _render_snippet_html(snippet_raw: Any, line_val: Any) -> str:
     """Tạo khối HTML cho trích đoạn code snippet với đánh số dòng."""
     if not snippet_raw:
@@ -213,6 +242,29 @@ def _render_issues_section(crit_high_issues: list[dict[str, Any]]) -> str:  # py
                 f'</div>'
             )
 
+        ai_analysis = str(issue.get("ai_analysis") or "").strip()
+        ai_triage = str(issue.get("ai_triage") or "").strip()
+        ai_patch = str(issue.get("ai_patch") or "").strip()
+        ai_box_html = ""
+        if ai_analysis or ai_patch:
+            triage_disp = f" · Đánh giá: {html.escape(ai_triage)}" if ai_triage else ""
+            patch_disp = (
+                f'<pre class="code-snippet" style="background: #F0FDF4; border: 1px solid #BBF7D0; '
+                f'color: #166534;"><code>{html.escape(ai_patch)}</code></pre>'
+                if ai_patch
+                else ""
+            )
+            ai_box_html = (
+                f'<div style="margin-top: 8px; padding: 10px; background: #F8FAFC; '
+                f'border: 1px solid #E2E8F0; border-radius: 4px;">'
+                f'<div style="font-size: 12px; font-weight: 700; color: #0F172A; margin-bottom: 4px;">'
+                f'Đề xuất xử lý từ AI{triage_disp}:</div>'
+                f'<div style="font-size: 12px; color: #334155; line-height: 1.5; margin-bottom: 6px;">'
+                f'{html.escape(ai_analysis)}</div>'
+                f'{patch_disp}'
+                f'</div>'
+            )
+
         card_html = (
             f'<div class="issue-card {sev_class}">'
             f'<div class="issue-header">'
@@ -223,11 +275,53 @@ def _render_issues_section(crit_high_issues: list[dict[str, Any]]) -> str:  # py
             f'<div class="issue-msg">{html.escape(msg)}</div>'
             f'{snippet_html}'
             f'{remediation_html}'
+            f'{ai_box_html}'
             f'</div>'
         )
         cards.append(card_html)
 
     return "\n".join(cards)
+
+
+def _render_ai_review_section(session_review: dict[str, Any]) -> str:
+    """Tạo khối HTML đánh giá tổng hợp và lộ trình khắc phục của DeepSeek AI."""
+    if not session_review or not isinstance(session_review, dict):
+        return ""
+    overview = html.escape(str(session_review.get("overview") or "").strip())
+    verdict = html.escape(str(session_review.get("security_verdict") or "").strip())
+    actions = session_review.get("priority_actions") or []
+    if not overview and not verdict and not actions:
+        return ""
+
+    actions_items = "".join(f"<li>{html.escape(str(act))}</li>" for act in actions)
+    actions_html = (
+        f'<ul style="margin: 8px 0 0 20px; font-size: 13px; color: #334155;">{actions_items}</ul>'
+        if actions_items
+        else ""
+    )
+    verdict_html = (
+        f'<div style="font-size: 13px; font-weight: 600; color: #0F172A; margin-top: 8px;">'
+        f'Nhận định an ninh: <span style="font-weight: 400; color: #475569;">{verdict}</span></div>'
+        if verdict
+        else ""
+    )
+    actions_header = (
+        '<div style="font-size: 13px; font-weight: 600; color: #0F172A; margin-top: 10px;">'
+        'Lộ trình ưu tiên khắc phục:</div>'
+        if actions_items
+        else ""
+    )
+
+    return (
+        '<div class="section-title">Đánh giá Tổng hợp & Lộ trình Khắc phục (DeepSeek AI)</div>'
+        '<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 4px solid #10B981; '
+        'border-radius: 6px; padding: 16px; margin-bottom: 24px;">'
+        f'<div style="font-size: 13px; color: #1E293B; line-height: 1.6;">{overview}</div>'
+        f'{verdict_html}'
+        f'{actions_header}'
+        f'{actions_html}'
+        '</div>'
+    )
 
 
 def _build_html_report_content(  # pylint: disable=too-many-locals
@@ -253,6 +347,7 @@ def _build_html_report_content(  # pylint: disable=too-many-locals
     sec_color = _get_score_color(security_score)
 
     crit_table_html = _render_crit_table(crit_scores)
+    ai_section_html = _render_ai_review_section(report_meta.get("session_review", {}))
     charts_section = _render_charts_section(radar_b64, risk_b64)
     issues_section_content = _render_issues_section(crit_high_issues)
 
@@ -374,7 +469,7 @@ def _build_html_report_content(  # pylint: disable=too-many-locals
 <body>
 <div class="report-container">
   <div class="no-print no-print-banner">
-    📄 <b>Báo cáo kỹ thuật độc lập</b> · Nhấn phím <b>Ctrl + P</b> để in hoặc xuất PDF chuẩn tài liệu.
+    <b>Báo cáo kỹ thuật độc lập</b> · Nhấn phím <b>Ctrl + P</b> để in hoặc xuất PDF chuẩn tài liệu.
   </div>
 
   <div class="header-section">
@@ -444,6 +539,8 @@ def _build_html_report_content(  # pylint: disable=too-many-locals
       {crit_table_html}
     </tbody>
   </table>
+
+  {ai_section_html}
 
   {charts_section}
 

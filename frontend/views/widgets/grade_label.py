@@ -36,28 +36,34 @@ class GradeLabel(QWidget):  # pylint: disable=too-few-public-methods
     def _setup_ui(self) -> None:
         """Thiết lập bố cục chữ cái và điểm số."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(2)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Chữ cái xếp loại (72px, bold)
+        # Chữ cái xếp loại (64px, bold)
         self._lbl_grade = QLabel("A", self)
         self._lbl_grade.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Điểm tổng (40px, semibold)
+        # Điểm tổng (26px, semibold)
         self._lbl_score = QLabel("100 / 100", self)
         self._lbl_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Dòng chú thích nhỏ
         self._lbl_sub = QLabel("Điểm chất lượng mã nguồn", self)
         self._lbl_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._lbl_sub.setWordWrap(False)
         self._lbl_sub.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 12px; margin-top: 4px;"
+            f"color: {TEXT_MUTED}; font-size: 11px; margin-top: 2px;"
         )
 
         layout.addWidget(self._lbl_grade)
         layout.addWidget(self._lbl_score)
         layout.addWidget(self._lbl_sub)
+
+    def set_grade(self, grade: str, total_score: float | None = None) -> None:
+        """Cập nhật xếp loại và điểm số (tương thích ngược cho các lời gọi set_grade)."""
+        score = self.total_score if total_score is None else float(total_score)
+        self.set_grade_and_score(grade, score)
 
     def set_grade_and_score(self, grade: str, total_score: float) -> None:
         """Cập nhật xếp loại và điểm tổng kết."""
@@ -67,7 +73,7 @@ class GradeLabel(QWidget):  # pylint: disable=too-few-public-methods
         grade_color = GRADE_COLORS.get(self.grade, GRADE_A)
         self._lbl_grade.setText(self.grade)
         self._lbl_grade.setStyleSheet(
-            f"font-size: 72px;"
+            f"font-size: 64px;"
             f"font-weight: bold;"
             f"color: {grade_color};"
             f"line-height: 1;"
@@ -83,8 +89,8 @@ class GradeLabel(QWidget):  # pylint: disable=too-few-public-methods
 
         self._lbl_score.setText(f"{score_str} / 100")
         self._lbl_score.setStyleSheet(
-            f"font-size: 36px;"
-            f"font-weight: 600;"
+            f"font-size: 26px;"
+            f"font-weight: 700;"
             f"color: {TEXT_MAIN};"
             f"padding: 0px;"
             f"margin: 0px;"

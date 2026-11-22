@@ -20,6 +20,7 @@ class IssueController(BaseController):
     issue_updated = pyqtSignal(int, str, object)
     issues_deleted = pyqtSignal(list)
     issue_created = pyqtSignal(dict)
+    issue_explained = pyqtSignal(dict)
 
     def load_session_issues(self, session_id: int) -> None:
         """Tải danh sách lỗi của phiên phân tích từ máy chủ qua API."""
@@ -139,4 +140,25 @@ class IssueController(BaseController):
             task_fn=_do_create,
             on_success=_on_success,
             loading_status="Đang lưu lỗi thủ công...",
+        )
+
+    def explain_issue(self, issue_id: int) -> None:
+        """Yêu cầu AI phân tích chuyên sâu và đề xuất sửa lỗi qua API."""
+        def _do_explain() -> dict[str, Any]:
+            return api.explain_issue(issue_id)
+
+        def _on_success(response: dict[str, Any]) -> None:
+            updated_issue = response.get("data") or response
+            self.issue_explained.emit(updated_issue)
+            self.status_message.emit(f"Đã phân tích xong lỗi #{issue_id} bằng AI.")
+
+        def _on_error(error_msg: str) -> None:
+            self.error_occurred.emit(error_msg)
+            self.status_message.emit(f"Phân tích AI thất bại: {error_msg}")
+
+        self._execute_async(
+            task_fn=_do_explain,
+            on_success=_on_success,
+            on_error=_on_error,
+            loading_status=f"Đang gửi lỗi #{issue_id} tới DeepSeek AI...",
         )

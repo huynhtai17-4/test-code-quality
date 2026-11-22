@@ -8,7 +8,19 @@ VALID_ISSUE_STATUSES = frozenset({"open", "in_progress", "fixed", "ignored"})
 VALID_ISSUE_SEVERITIES = frozenset({"info", "low", "medium", "high", "critical"})
 
 
-def create_issue(session_id: int, **fields: Any) -> int:
+def ensure_ai_columns() -> None:
+    """Tự động bổ sung các cột AI vào bảng issues nếu chưa tồn tại."""
+    for col in ("ai_analysis", "ai_triage", "ai_patch"):
+        try:
+            execute_write(f"ALTER TABLE issues ADD COLUMN {col} TEXT;")
+        except Exception:  # pylint: disable=broad-exception-caught # nosec B110
+            pass
+
+
+ensure_ai_columns()
+
+
+def create_issue(session_id: int, **fields: Any) -> int:  # pylint: disable=too-many-locals
     """Thêm một lỗi thủ công hoặc đơn lẻ vào bảng issues và trả về ID."""
     severity = str(fields.get("severity", "medium")).lower()
     if severity not in VALID_ISSUE_SEVERITIES:
@@ -29,13 +41,17 @@ def create_issue(session_id: int, **fields: Any) -> int:
         line_number = fields["line"]
     column_number = fields.get("column_number")
     note = fields.get("note")
+    ai_analysis = fields.get("ai_analysis")
+    ai_triage = fields.get("ai_triage")
+    ai_patch = fields.get("ai_patch")
 
     sql = """
         INSERT INTO issues (
             session_id, tool, rule_code, severity, category,
-            file_path, line_number, column_number, message, status, note
+            file_path, line_number, column_number, message, status, note,
+            ai_analysis, ai_triage, ai_patch
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     params = (
         session_id,
@@ -49,6 +65,9 @@ def create_issue(session_id: int, **fields: Any) -> int:
         message,
         clean_status,
         note,
+        ai_analysis,
+        ai_triage,
+        ai_patch,
     )
     return execute_insert(sql, params)
 
@@ -65,9 +84,10 @@ def add_issues_bulk(session_id: int, issues: list[dict[str, Any]]) -> int:
     sql = """
         INSERT INTO issues (
             session_id, tool, rule_code, severity, category,
-            file_path, line_number, column_number, message, status, note
+            file_path, line_number, column_number, message, status, note,
+            ai_analysis, ai_triage, ai_patch
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     rows = []
     for item in issues:
@@ -91,6 +111,9 @@ def add_issues_bulk(session_id: int, issues: list[dict[str, Any]]) -> int:
             item["message"],
             status,
             item.get("note"),
+            item.get("ai_analysis"),
+            item.get("ai_triage"),
+            item.get("ai_patch"),
         ))
 
     return execute_many(sql, rows)
@@ -111,7 +134,8 @@ def get_issues_by_session(
     sql = """
         SELECT id, session_id, tool, rule_code, severity, category,
                file_path, line_number, column_number, message,
-               status, note, created_at, updated_at
+               status, note, ai_analysis, ai_triage, ai_patch,
+               created_at, updated_at
         FROM issues
         WHERE session_id = %s
           AND (%s IS NULL OR status = %s)
@@ -134,7 +158,8 @@ def get_issue_by_id(issue_id: int) -> Optional[dict[str, Any]]:
     sql = """
         SELECT id, session_id, tool, rule_code, severity, category,
                file_path, line_number, column_number, message,
-               status, note, created_at, updated_at
+               status, note, ai_analysis, ai_triage, ai_patch,
+               created_at, updated_at
         FROM issues
         WHERE id = %s
     """
@@ -161,19 +186,24 @@ def update_issue_status(
     ) > 0
 
 
-def add_issue_note(issue_id: int, note: str) -> bool:
-    """Thêm hoặc cập nhật ghi chú cho một lỗi."""
-    return execute_write("UPDATE issues SET note = %s WHERE id = %s", (note, issue_id)) > 0
-
-
 def delete_issue(issue_id: int) -> bool:
     """Xóa một lỗi theo ID."""
     return execute_write("DELETE FROM issues WHERE id = %s", (issue_id,)) > 0
 
 
-def delete_issues_by_session(session_id: int) -> int:
-    """Xóa toàn bộ lỗi thuộc về một phiên quét và trả về số dòng đã xóa."""
-    return execute_write("DELETE FROM issues WHERE session_id = %s", (session_id,))
+def update_issue_ai(
+    issue_id: int,
+    ai_analysis: str,
+    ai_triage: str,
+    ai_patch: str,
+) -> bool:
+    """Cập nhật thông tin phân tích và đề xuất sửa lỗi từ AI cho một lỗi."""
+    sql = """
+        UPDATE issues
+        SET ai_analysis = %s, ai_triage = %s, ai_patch = %s
+        WHERE id = %s
+    """
+    return execute_write(sql, (ai_analysis, ai_triage, ai_patch, issue_id)) > 0
 
 
 # Bí danh tương thích

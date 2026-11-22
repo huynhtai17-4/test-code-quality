@@ -4,8 +4,10 @@ from .analysis_handler import handle_run_analysis
 from .config_handler import handle_get_config, handle_update_config
 from .history_handler import handle_delete_history, handle_list_history
 from .issue_handler import (
+    handle_check_ai_health,
     handle_create_issue,
     handle_delete_issue,
+    handle_explain_issue,
     handle_list_issues,
     handle_update_issue_status,
 )
@@ -31,6 +33,8 @@ __all__ = [
     "handle_update_issue_status",
     "handle_delete_issue",
     "handle_create_issue",
+    "handle_explain_issue",
+    "handle_check_ai_health",
     # History Handlers
     "handle_list_history",
     "handle_delete_history",

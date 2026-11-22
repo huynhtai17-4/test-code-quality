@@ -12,8 +12,6 @@ from PyQt6.QtCore import (  # pylint: disable=no-name-in-module
 )
 from PyQt6.QtGui import QColor  # pylint: disable=no-name-in-module
 
-from frontend.views.theme import lay_font_code
-
 _FILE_HEADERS = (
     "Tên tệp tin",
     "Tổng lỗi",
@@ -93,6 +91,7 @@ class FileSummaryTableModel(QAbstractTableModel):
             return self._get_cell_color(file_info, col)
 
         if role == Qt.ItemDataRole.FontRole:
+            from frontend.views.theme import lay_font_code  # pylint: disable=import-outside-toplevel
             return lay_font_code(11)
 
         if role == Qt.ItemDataRole.TextAlignmentRole:

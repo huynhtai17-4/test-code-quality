@@ -61,7 +61,7 @@ class AnalysisScoreBlock(QFrame):
 
         # Cột 1: GradeLabel
         left_col = QWidget(self)
-        left_col.setFixedWidth(160)
+        left_col.setFixedWidth(200)
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.addWidget(self._grade_label, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -158,7 +158,7 @@ class AnalysisScoreBlock(QFrame):
         crit_scores: dict[str, float],
     ) -> None:
         """Cập nhật toàn bộ điểm tổng kết, xếp loại và các tiêu chí chi tiết."""
-        self._grade_label.set_grade(grade, total_score)
+        self._grade_label.set_grade_and_score(grade, total_score)
         self._set_metric_label(self._lbl_quality_val, quality_score)
         self._set_metric_label(self._lbl_security_val, security_score)
 

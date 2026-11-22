@@ -10,7 +10,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 # pylint: disable=wrong-import-position
-from backend.database.repositories import project_repo
+from backend.database.repositories import project_repo, session_repo
 from backend.handlers._base import error_response, parse_positive_int, success_response
 
 
@@ -47,6 +47,10 @@ def handle_list_projects(_data: dict[str, Any]) -> dict[str, Any]:
     """Lấy danh sách tất cả các dự án đã đăng ký trong hệ thống."""
     try:
         projects = project_repo.get_all_projects()
+        for proj in projects:
+            sessions = session_repo.get_sessions_by_project(proj["id"], limit=1)
+            if sessions:
+                proj["latest_session"] = sessions[0]
         return success_response(projects)
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return error_response(f"Lỗi khi lấy danh sách dự án: {exc}")
@@ -59,6 +63,9 @@ def handle_get_project(data: dict[str, Any]) -> dict[str, Any]:
         project = project_repo.get_project_by_id(project_id)
         if not project:
             return error_response(f"Không tìm thấy dự án với ID = {project_id}")
+        sessions = session_repo.get_sessions_by_project(project_id, limit=1)
+        if sessions:
+            project["latest_session"] = sessions[0]
         return success_response(project)
     except Exception as exc:  # pylint: disable=broad-exception-caught
         return error_response(f"Lỗi khi lấy thông tin dự án: {exc}")

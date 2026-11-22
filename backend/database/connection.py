@@ -49,13 +49,6 @@ _ACTIVE_DB_TYPE: Optional[str] = DB_TYPE if DB_TYPE in ("sqlite", "mysql") else 
 _SQLITE_INITIALIZED = False
 
 
-def set_active_db_type(db_type: str) -> None:
-    """Thiết lập loại cơ sở dữ liệu chủ động ('sqlite' hoặc 'mysql')."""
-    global _ACTIVE_DB_TYPE  # pylint: disable=global-statement
-    with _POOL_LOCK:
-        _ACTIVE_DB_TYPE = db_type.lower()
-
-
 def get_active_db_type() -> str:
     """Xác định loại cơ sở dữ liệu hiện tại ('sqlite' hoặc 'mysql')."""
     global _ACTIVE_DB_TYPE  # pylint: disable=global-statement

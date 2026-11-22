@@ -13,11 +13,13 @@ if str(ROOT_DIR) not in sys.path:
 
 # pylint: disable=wrong-import-position
 from backend.handlers import (
+    handle_check_ai_health,
     handle_create_issue,
     handle_create_project,
     handle_delete_history,
     handle_delete_issue,
     handle_delete_project,
+    handle_explain_issue,
     handle_get_config,
     handle_get_project,
     handle_list_history,
@@ -53,6 +55,9 @@ ACTION_ROUTES: dict[str, HandlerType] = {
     # Nhóm cấu hình
     "config.get": handle_get_config,
     "config.update": handle_update_config,
+    # Nhóm trí tuệ nhân tạo (AI)
+    "ai.explain_issue": handle_explain_issue,
+    "ai.health": handle_check_ai_health,
 }
 
 

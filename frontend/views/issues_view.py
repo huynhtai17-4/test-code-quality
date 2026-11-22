@@ -69,6 +69,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self._controller.issue_updated.connect(self._on_issue_updated)
         self._controller.issues_deleted.connect(self._on_issues_deleted)
         self._controller.issue_created.connect(self._on_issue_created)
+        self._controller.issue_explained.connect(self._on_issue_explained)
         self._controller.error_occurred.connect(self._on_issue_error)
         self._controller.status_message.connect(self.status_message.emit)
 
@@ -122,6 +123,7 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         table_container = self._create_table_container()
         self.detail_panel.save_note_requested.connect(self._on_save_detail_note)
+        self.detail_panel.explain_requested.connect(self._on_explain_issue_requested)
 
         splitter.addWidget(table_container)
         splitter.addWidget(self.detail_panel)
@@ -283,6 +285,26 @@ class IssuesView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.detail_panel.set_save_enabled(True)
         self._table_model.update_issue_fields(issue_id, status, note)
         self.issue_updated.emit(issue_id)
+
+    def _on_explain_issue_requested(self, issue_id: int) -> None:
+        """Gửi yêu cầu phân tích lỗi bằng AI tới Controller."""
+        self._controller.explain_issue(issue_id)
+
+    def _on_issue_explained(self, updated_issue: dict[str, Any]) -> None:
+        """Cập nhật lại giao diện sau khi AI phân tích xong."""
+        raw_id = updated_issue.get("id") or updated_issue.get("issue_id")
+        if raw_id:
+            issue_id = int(raw_id)
+            self._table_model.update_issue_fields(
+                issue_id=issue_id,
+                ai_analysis=updated_issue.get("ai_analysis"),
+                ai_triage=updated_issue.get("ai_triage"),
+                ai_patch=updated_issue.get("ai_patch"),
+            )
+            selected = self.detail_panel.get_selected_issue()
+            if selected and (selected.get("id") == issue_id or selected.get("issue_id") == issue_id):
+                self.detail_panel.display_issue(updated_issue)
+            self.issue_updated.emit(issue_id)
 
     def _on_issue_error(self, err_msg: str) -> None:
         """Hiển thị thông báo lỗi trên giao diện."""

@@ -363,8 +363,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             if sel_model is not None:
                 sel_model.selectionChanged.connect(self._on_project_selection_changed)
 
-        # 2. AnalysisView -> IssuesView
+        # 2. AnalysisView -> IssuesView & Project Sync
         self.analysis_view.switch_to_issues.connect(self.on_switch_to_issues)
+        self.analysis_view.analysis_completed.connect(self._on_analysis_completed)
 
         # 3. HistoryView -> IssuesView
         self.history_view.open_session_issues.connect(self.on_switch_to_issues)
@@ -396,12 +397,32 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if btn and not btn.isChecked():
             btn.setChecked(True)
 
+        # Tự động nạp danh sách lỗi nếu chuyển sang IssuesView mà đã có phiên phân tích
+        if index == 2 and self.issues_view:
+            target_sid = None
+            # pylint: disable=protected-access
+            if self.analysis_view and getattr(self.analysis_view, "_session_id", None):
+                target_sid = int(self.analysis_view._session_id)
+            elif self.current_project:
+                ls = self.current_project.get("latest_session")
+                if isinstance(ls, dict):
+                    target_sid = ls.get("id") or ls.get("session_id")
+                elif isinstance(ls, (int, str)):
+                    target_sid = int(ls)
+            if target_sid and getattr(self.issues_view, "_session_id", None) != target_sid:
+                self.issues_view.load_session_issues(int(target_sid))
+
         # Tự động nạp lịch sử nếu chuyển sang HistoryView mà đã có dự án hiện tại
         if index == 3 and self.current_project and "id" in self.current_project:
             proj_id = int(self.current_project["id"])
             # pylint: disable=protected-access
             if self.history_view and getattr(self.history_view, "_project_id", None) != proj_id:
                 self.history_view.load_project_history(proj_id)
+
+    def _on_analysis_completed(self, data: dict[str, Any]) -> None:
+        """Cập nhật latest_session cho project hiện tại khi phân tích hoàn tất."""
+        if self.current_project:
+            self.current_project["latest_session"] = data
 
     def set_current_project(self, project: dict[str, Any] | None) -> None:
         """
@@ -457,7 +478,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if self.projects_view is not None:
             self.projects_view._on_add_project()
 
-    def refresh_current_view(self) -> None:
+    def refresh_current_view(self) -> None:  # pylint: disable=too-many-branches
         """Gọi hàm làm mới (refresh/load) cho màn hình đang hiển thị."""
         if self.stack is None:
             return
@@ -469,8 +490,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         elif current_idx == 2 and self.issues_view:
             # pylint: disable=protected-access
             sid = getattr(self.issues_view, "_session_id", None)
+            if not sid:
+                if self.analysis_view and getattr(self.analysis_view, "_session_id", None):
+                    sid = int(self.analysis_view._session_id)
+                elif self.current_project:
+                    ls = self.current_project.get("latest_session")
+                    if isinstance(ls, dict):
+                        sid = ls.get("id") or ls.get("session_id")
+                    elif isinstance(ls, (int, str)):
+                        sid = int(ls)
             if sid:
-                self.issues_view.load_session_issues(sid)
+                self.issues_view.load_session_issues(int(sid))
         elif current_idx == 3 and self.history_view:
             # pylint: disable=protected-access
             pid = getattr(self.history_view, "_project_id", None)

@@ -50,6 +50,7 @@ from frontend.views.widgets.page_header import PageHeader
 class AnalysisView(QWidget):
     """Màn hình Phân tích chất lượng mã nguồn chuyên sâu (AnalysisView)."""
 
+    analysis_completed = pyqtSignal(dict)
     switch_to_issues = pyqtSignal(int)
     status_message = pyqtSignal(str)
 
@@ -151,12 +152,28 @@ class AnalysisView(QWidget):
         header.them_nut_phai(self._btn_export_html)
         self._btn_export_html.hide()
 
-        self._btn_reanalyze = QPushButton("Phân tích lại", self)
+        self._btn_reanalyze = QPushButton("Bắt đầu phân tích", self)
         self._btn_reanalyze.setProperty("role", "primary")
+        self._btn_reanalyze.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #0F172A;"
+            "  color: #FFFFFF;"
+            "  border: 1px solid #0F172A;"
+            "  border-radius: 4px;"
+            "  padding: 6px 18px;"
+            "  font-weight: 600;"
+            "  font-size: 13px;"
+            "  min-height: 32px;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: #1E293B;"
+            "  border-color: #1E293B;"
+            "}"
+        )
         self._btn_reanalyze.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_reanalyze.clicked.connect(self.start_analysis)
         header.them_nut_phai(self._btn_reanalyze)
-        self._btn_reanalyze.hide()
+        self._btn_reanalyze.show()
 
         return header
 
@@ -185,18 +202,22 @@ class AnalysisView(QWidget):
 
         latest_session = project.get("latest_session")
         if latest_session and isinstance(latest_session, dict):
+            if self._btn_reanalyze:
+                self._btn_reanalyze.setText("Phân tích lại")
+                self._btn_reanalyze.show()
             self.load_session_data(latest_session)
         else:
+            if self._btn_reanalyze:
+                self._btn_reanalyze.setText("Bắt đầu phân tích")
+                self._btn_reanalyze.show()
             if self._score_stack:
                 self._score_stack.setCurrentIndex(2)
             if self._tab_widget:
                 self._tab_widget.hide()
-            if self._btn_reanalyze:
-                self._btn_reanalyze.hide()
             if self._btn_export_html:
                 self._btn_export_html.hide()
 
-    def load_session_data(self, data: dict[str, Any]) -> None:
+    def load_session_data(self, data: dict[str, Any]) -> None:  # pylint: disable=too-many-locals
         """Nạp dữ liệu phiên phân tích vào các components giao diện."""
         if not data:
             return
@@ -227,7 +248,7 @@ class AnalysisView(QWidget):
         elif not isinstance(summary, dict):
             summary = {}
 
-        crit_scores = summary.get("criteria_scores", {})
+        crit_scores = summary.get("criteria_scores") or data.get("criteria_scores") or {}
         if not crit_scores:
             sec_cnt = float(data.get("security_issues_count") or 0.0)
             crit_scores = {
@@ -241,8 +262,8 @@ class AnalysisView(QWidget):
 
         quality_score, security_score = _compute_dual_scores(
             crit_scores,
-            summary.get("quality_score"),
-            summary.get("security_score"),
+            summary.get("quality_score") or data.get("quality_score"),
+            summary.get("security_score") or data.get("security_score"),
             total_score,
         )
 
@@ -254,19 +275,52 @@ class AnalysisView(QWidget):
             crit_scores,
         )
 
-        sev_dist = summary.get("severity_distribution", {})
+        sev_dist = summary.get("severity_distribution") or data.get("severity_distribution") or {}
         self._overview_tab.update_severity_labels(sev_dist)
+
+        total_files = (
+            summary.get("total_files")
+            or data.get("total_files")
+            or data.get("files_count")
+            or len(summary.get("file_summary", []))
+            or len(data.get("file_summary", []))
+        )
+        total_loc = (
+            summary.get("total_loc")
+            or data.get("total_loc")
+            or data.get("loc")
+        )
+        total_issues = (
+            data.get("total_issues")
+            or summary.get("total_issues")
+            or data.get("total_issues_count")
+            or (sum(int(v) for v in sev_dist.values()) if sev_dist else 0)
+        )
         self._overview_tab.update_overview_counts(
-            summary.get("total_files") or data.get("files_count"),
-            summary.get("total_loc") or data.get("loc"),
-            data.get("total_issues") or sum(sev_dist.values()),
+            total_files,
+            total_loc,
+            total_issues,
         )
 
-        all_files = summary.get("file_metrics") or data.get("files") or []
+        all_files = (
+            summary.get("file_summary")
+            or summary.get("file_metrics")
+            or data.get("file_summary")
+            or data.get("file_metrics")
+            or data.get("files")
+            or []
+        )
         self._file_table_model.set_files(all_files)
 
-        top_files = data.get("top_risk_files") or all_files[:5]
+        top_files = summary.get("top_risk_files") or data.get("top_risk_files") or all_files[:5]
         self._charts_tab.draw_charts(crit_scores, top_files)
+
+        session_review = (
+            summary.get("session_review")
+            or data.get("session_review")
+            or {}
+        )
+        self._overview_tab.update_ai_review(session_review)
 
     def start_analysis(self) -> None:
         """Khởi động luồng phân tích bất đồng bộ cho dự án hiện tại."""
@@ -299,10 +353,14 @@ class AnalysisView(QWidget):
         """Xử lý kết quả phân tích hoàn tất từ Backend."""
         data = response.get("data", response)
         self.load_session_data(data)
+        self.analysis_completed.emit(data)
         self.status_message.emit("Hoàn thành phân tích dự án thành công!")
 
     def _on_analysis_failed(self, error_msg: str) -> None:
         """Xử lý khi tiến trình phân tích gặp lỗi."""
+        if self._btn_reanalyze:
+            self._btn_reanalyze.setText("Bắt đầu phân tích")
+            self._btn_reanalyze.show()
         if self._score_stack:
             self._score_stack.setCurrentIndex(2)
         if self._btn_export_html:
@@ -389,6 +447,10 @@ class AnalysisView(QWidget):
         sev_dist = summary.get("severity_distribution", {})
         files_str, loc_str, issues_str = self._overview_tab.get_display_stats()
 
+        session_review = summary.get("session_review")
+        if not session_review and isinstance(data.get("session_review"), dict):
+            session_review = data.get("session_review")
+
         report_meta = {
             "project_name": self._project_name,
             "session_id": self._session_id,
@@ -400,6 +462,7 @@ class AnalysisView(QWidget):
             "files_text": files_str,
             "loc_text": loc_str,
             "issues_text": issues_str,
+            "session_review": session_review or {},
         }
 
         return _build_html_report_content(

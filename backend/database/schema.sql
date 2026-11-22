@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS issues (
     message TEXT NOT NULL,
     status ENUM('open', 'in_progress', 'fixed', 'ignored') NOT NULL DEFAULT 'open',
     note TEXT NULL,
+    ai_analysis TEXT NULL,
+    ai_triage VARCHAR(50) NULL,
+    ai_patch TEXT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_issues_session

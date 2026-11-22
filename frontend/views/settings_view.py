@@ -11,6 +11,7 @@ if str(ROOT_DIR) not in sys.path:
 # pylint: disable=wrong-import-position,no-name-in-module
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
@@ -69,6 +70,7 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         self._controller.ping_result.connect(self._on_ping_result)
         self._controller.configs_loaded.connect(self._on_configs_loaded)
         self._controller.configs_saved.connect(self._on_configs_saved)
+        self._controller.ai_health_result.connect(self._on_ai_health_result)
         self._controller.status_message.connect(self.status_message.emit)
 
         self.ip_edit = QLineEdit(config.SERVER_HOST)
@@ -76,6 +78,12 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.port_spin.setObjectName("PortSpin")
         self.btn_ping = QPushButton("Kiểm tra kết nối")
         self.lbl_ping_result = QLabel("")
+
+        self.ai_endpoint_edit = QLineEdit("http://127.0.0.1:8001/chat")
+        self.ai_model_combo = QComboBox()
+        self.ai_model_combo.addItems(["deepseek-chat", "deepseek-reasoner"])
+        self.btn_check_ai = QPushButton("Kiểm tra DeepSeek")
+        self.lbl_ai_result = QLabel("")
 
         self.weight_spins: dict[str, QDoubleSpinBox] = {}
         self.lbl_total_value = QLabel("Tổng hiện tại: 1.00")
@@ -129,6 +137,7 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         )
         form_layout.addWidget(header)
         form_layout.addWidget(self._create_server_section())
+        form_layout.addWidget(self._create_ai_section())
         form_layout.addWidget(self._create_weights_section())
         form_layout.addLayout(self._create_action_buttons())
 
@@ -179,6 +188,49 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         ping_layout.addWidget(self.btn_ping)
         ping_layout.addWidget(self.lbl_ping_result, 1)
         layout.addLayout(ping_layout)
+
+        return panel
+
+    def _create_ai_section(self) -> QWidget:
+        """Tạo thẻ Panel cấu hình máy chủ DeepSeek AI Proxy."""
+        panel = Panel()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(20, 18, 20, 20)
+        layout.setSpacing(14)
+
+        header_box = QVBoxLayout()
+        header_box.setSpacing(4)
+        title_lbl = QLabel("CẤU HÌNH TRÍ TUỆ NHÂN TẠO (DEEPSEEK AI)")
+        title_lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 700; color: {TEXT_MAIN}; letter-spacing: 0.5px;"
+        )
+        desc_lbl = QLabel(
+            "Cấu hình địa chỉ proxy và mô hình AI để phân tích chuyên sâu các lỗi Critical/High"
+        )
+        desc_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        header_box.addWidget(title_lbl)
+        header_box.addWidget(desc_lbl)
+        layout.addLayout(header_box)
+        layout.addWidget(create_separator())
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.ai_endpoint_edit.setPlaceholderText("http://127.0.0.1:8001/chat")
+        form.addRow("Địa chỉ AI Proxy:", self.ai_endpoint_edit)
+        form.addRow("Mô hình AI:", self.ai_model_combo)
+        layout.addLayout(form)
+
+        ai_check_layout = QHBoxLayout()
+        ai_check_layout.setSpacing(12)
+
+        self.btn_check_ai.clicked.connect(self._on_check_ai_clicked)
+        self.lbl_ai_result.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+
+        ai_check_layout.addWidget(self.btn_check_ai)
+        ai_check_layout.addWidget(self.lbl_ai_result, 1)
+        layout.addLayout(ai_check_layout)
 
         return panel
 
@@ -273,6 +325,21 @@ class SettingsView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.lbl_ping_result.setText(message)
         color = GRADE_A if is_ok else GRADE_F
         self.lbl_ping_result.setStyleSheet(f"color: {color}; font-size: 13px;")
+
+    def _on_check_ai_clicked(self) -> None:
+        """Kiểm tra tình trạng hoạt động của DeepSeek AI qua Controller."""
+        endpoint = self.ai_endpoint_edit.text().strip() or None
+        self.btn_check_ai.setEnabled(False)
+        self.lbl_ai_result.setText("Đang kiểm tra kết nối DeepSeek...")
+        self.lbl_ai_result.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        self._controller.check_ai_health(endpoint)
+
+    def _on_ai_health_result(self, is_ok: bool, message: str) -> None:
+        """Cập nhật kết quả kiểm tra DeepSeek AI lên giao diện."""
+        self.btn_check_ai.setEnabled(True)
+        self.lbl_ai_result.setText(message)
+        color = GRADE_A if is_ok else GRADE_F
+        self.lbl_ai_result.setStyleSheet(f"color: {color}; font-size: 13px;")
 
     def _on_reset_clicked(self) -> None:
         """Khôi phục các ô trọng số về giá trị mặc định chuẩn."""

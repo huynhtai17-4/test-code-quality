@@ -224,8 +224,3 @@ def analyze_directory_metrics(target_path: str | Path) -> dict[str, Any]:
         "files": files_info,
         "issues": all_issues,
     }
-
-
-def analyze_radon(target_path: str | Path) -> dict[str, Any]:
-    """Bí danh tương thích với quy ước analyze_<tool> cho Radon."""
-    return analyze_directory_metrics(target_path)

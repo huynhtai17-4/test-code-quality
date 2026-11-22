@@ -1,0 +1,15 @@
+{
+  "auth_token": "",
+  "chat_session_id": "",
+  "cookies": {
+    "ds_session_id": "",
+    "aws-waf-token": "",
+    ".thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae": "",
+    "smidV2": ""
+  },
+  "device": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "x_device_id": "",
+    "x_hif_leim": ""
+  }
+}
