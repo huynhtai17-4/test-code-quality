@@ -78,3 +78,8 @@ Thumbs.db
 *.browser_profile/
 .ai_cache.json
 *.ai_cache.json
+
+# Archives
+*.zip
+*.tar.gz
+*.rar

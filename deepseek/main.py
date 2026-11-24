@@ -44,7 +44,7 @@ async def chat_endpoint(req: ChatRequest):
         if req.system_prompt:
             prompt = f"{req.system_prompt}\n\n{req.message}"
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
             answer = await chat_completion(
                 client=client,
                 cfg=cfg,

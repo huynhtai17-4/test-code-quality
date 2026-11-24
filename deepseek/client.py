@@ -102,16 +102,19 @@ async def chat_completion(
                 await asyncio.sleep(2.0)
 
         except httpx.HTTPStatusError as e:
-            log.error(f"HTTP error {e.response.status_code}: {e}")
             if e.response.status_code in (401, 403):
-                raise RuntimeError("Auth token hoặc cookies đã hết hạn! Vui lòng cập nhật config.json")
+                log.error(f"HTTP error {e.response.status_code}: Auth token hoặc cookies đã hết hạn!")
+                raise RuntimeError("Auth token hoặc cookies đã hết hạn! Vui lòng cập nhật config.json") from e
             if attempt == max_retries - 1:
+                log.error(f"HTTP error {e.response.status_code}: {e}")
                 raise
+            log.warning(f"Lỗi HTTP {e.response.status_code}, đang thử lại lần {attempt + 2}/{max_retries}...")
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
-            log.exception(f"Lỗi gửi câu hỏi: {e}")
             if attempt == max_retries - 1:
+                log.error(f"Lỗi gửi câu hỏi sau {max_retries} lần thử: {e}")
                 raise
+            log.warning(f"Gặp gián đoạn mạng ({e}), đang tự động kết nối lại (lần {attempt + 2}/{max_retries})...")
             await asyncio.sleep(2 ** attempt)
 
     raise RuntimeError("Không thể nhận câu trả lời sau số lần thử tối đa.")

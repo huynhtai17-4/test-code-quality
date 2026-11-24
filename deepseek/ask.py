@@ -20,7 +20,7 @@ async def main():
         return
 
     print(f"\n[*] Đang gửi câu hỏi tới DeepSeek: \"{question}\"...")
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             answer = await chat_completion(client, cfg, question, thinking_enabled=True)
             print("\n" + "=" * 55)
